@@ -198,7 +198,8 @@ function updateTicketsTable(tickets) {
             <td>${(ticket.event_name || 'N/A').replace(/\s*#\d+$/, '')}</td>
             <td>${ticket.buyer_name || ticket.user_name || 'N/A'}</td>
             <td>${priceDisplay}</td>
-            <td><span style="font-size: 0.85rem; color: #0f172a; font-weight:700; text-transform: capitalize;">${ticketTypeDisplay}</span></td>
+            <td style="font-family:monospace;font-size:0.85rem;color:#635bff;font-weight:700; display: flex; align-items: center; gap: 8px;">${ticket.custom_id || ticket.id}
+                <span style="font-size: 0.75rem; background: rgba(114, 47, 55, 0.1); padding: 2px 6px; border-radius: 10px; color: var(--client-primary);">${ticketTypeDisplay}</span></td>
             <td><span style="font-size: 0.85rem; color: #64748b; text-transform: capitalize;">${eventCategoryDisplay}</span></td>
             <td>${ticket.purchase_date || ticket.created_at || 'N/A'}</td>
             <td><span class="status-badge ${ticket.status === 'valid' ? 'status-paid' : ticket.status === 'used' ? 'status-refunded' : ticket.status === 'pending' ? 'status-pending' : 'status-failed'}">${(ticket.status || 'N/A').toUpperCase()}</span></td>

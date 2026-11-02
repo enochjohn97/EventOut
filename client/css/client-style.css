@@ -1845,10 +1845,16 @@ input[type="date"]::-webkit-datetime-edit-text {
 }
 
 .ticket-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(114, 47, 55, 0.1);
+  border-radius: 20px;
   font-weight: 700;
-  font-size: 0.9rem;
-  color: #d4af37;
+  font-size: 0.8rem;
+  color: var(--client-primary);
   text-transform: uppercase;
+  margin-left: 8px;
 }
 
 .ticket-price-box {
@@ -3419,4 +3425,55 @@ body.client-dashboard .dash-panel {
   opacity: 1;
   transform: scale(1);
   z-index: 2;
+}
+
+/* Toast Notification System */
+.toast-container {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 320px;
+}
+
+.toast {
+    background: white;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 240px;
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 0.25s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    border-left: 3px solid;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.toast-message {
+    flex: 1;
+    font-size: 0.9rem;
+    font-weight: 500;
+    line-height: 1.4;
 }
