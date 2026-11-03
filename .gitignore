@@ -4,6 +4,7 @@
 /uploads/*
 !/uploads/.gitkeep
 .env
+.env.example
 .DS_Store
 *.swp
 *.swo
