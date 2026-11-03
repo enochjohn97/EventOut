@@ -10,6 +10,12 @@ class AppConfigService {
   static Future<({String googleClientId, String mapsApiKey,
       String paystackPublicKey, String paystackMode, bool paystackIsTestMode,
       String appUrl})> load() async {
+    // Never race the endpoint probe: this call must hit the origin that
+    // EndpointResolver settles on. resolve() returns the shared in-flight
+    // future, so this costs no extra probe when discovery already started.
+    try {
+      await EndpointResolver.resolve().timeout(const Duration(seconds: 20));
+    } catch (_) {}
     final response = await _dio.get('/config/app');
     final raw = response.data;
     final data = raw is Map<String, dynamic>

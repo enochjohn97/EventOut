@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: unused_element, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -201,11 +201,7 @@ void main() {
   // On a physical phone, use the computer's current Wi-Fi IPv4 address, not
   // the router address. If omitted or stale, EndpointResolver searches the
   // phone's private subnet for the local PHP API.
-  EndpointResolver.resolve().then((resolved) {
-    if (!resolved) {
-      runApp(const _LocalDevHintApp());
-    }
-  });
+  EndpointResolver.resolve();
   runApp(const EventraUserApp());
 }
 
@@ -235,14 +231,20 @@ class _EventraUserAppState extends State<EventraUserApp> {
   Future<void> _initializeAuthAndConfig() async {
     // Never race the endpoint probe: config.load() must hit the origin that
     // EndpointResolver settles on.
+    // Kick off endpoint discovery, Google config and the app config together:
+    // config.load() internally awaits the same resolve future, so running them
+    // concurrently costs one probe instead of stacking them serially.
+    final endpointReady = EndpointResolver.resolve();
+    final googleReady = GoogleAuthService.configure().catchError((_) {});
+    final configReady = _configProvider.load().catchError((_) {});
     try {
-      await EndpointResolver.resolve().timeout(const Duration(seconds: 20));
+      await endpointReady.timeout(const Duration(seconds: 20));
     } catch (_) {}
     try {
-      await GoogleAuthService.configure();
+      await googleReady;
     } catch (_) {}
     try {
-      await _configProvider.load();
+      await configReady;
     } catch (_) {}
     // Start push after the API origin is resolved so the token upload (and any
     // later publish push) targets the right host. Never blocks app startup.

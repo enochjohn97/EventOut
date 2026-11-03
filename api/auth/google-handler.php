@@ -7,11 +7,15 @@ header("Cross-Origin-Opener-Policy: same-origin-allow-popups");
 
 // Enforce JSON outputs under all circumstances (even on fatal database errors)
 set_exception_handler(function($e) {
+    error_log("[Google Auth Fatal Error] " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error. Please try again.']);
     exit;
 });
 set_error_handler(function($severity, $message, $file, $line) {
+    if (!(error_reporting() & $severity)) {
+        return false;
+    }
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
@@ -322,9 +326,9 @@ try {
         session_name($expectedSessionName);
     }
 
-    // Start session if not already started
+    // Start session safely if not already started
     if (session_status() === PHP_SESSION_NONE) {
-        require_once __DIR__ . '/../../server/config.php';
+        @session_start();
     }
 
     // Regenerate session ID for security, but preserve critical data
@@ -333,7 +337,7 @@ try {
         $oldCsrfToken = $_SESSION['csrf_token'] ?? null;
         
         // Regenerate session ID with delete_old_session = true
-        session_regenerate_id(true);
+        @session_regenerate_id(true);
         
         // Restore CSRF token if it existed
         if ($oldCsrfToken) {
@@ -447,9 +451,11 @@ try {
             'token' => $token
         ]
     ]);
-} catch (PDOException $e) {
-    if ($pdo->inTransaction()) {
+} catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    echo json_encode(['success' => false, 'message' => 'Auth failed due to server error.']);
+    error_log("[Google Auth Error] " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Auth failed due to server error. Please try again.']);
 }

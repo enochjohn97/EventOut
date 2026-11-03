@@ -36,7 +36,7 @@ class EndpointResolver {
   /// `--dart-define=LIVE_API_HOSTS=https://other-host.example`.
   static const _liveHosts = String.fromEnvironment(
     'LIVE_API_HOSTS',
-    defaultValue: 'https://eventra-website.liveblog365.com',
+    defaultValue: 'https://eventout.com.ng',
   );
 
   /// Known live API origins, probed after every local candidate fails.
@@ -108,6 +108,24 @@ class EndpointResolver {
   /// Origin currently adopted by [ApiClient].
   static String? _current;
 
+  /// Anti-bot `__test` cookie solved during the last successful probe.
+  ///
+  /// Without this the first real request after boot is challenged again and
+  /// has to solve it a second time — a wasted round trip (~0.5-1s) on the
+  /// critical path of every cold start and of Google sign-in.
+  static String? _solvedCookie;
+
+  /// Origin [solvedCookie] was minted for. The cookie is host-specific, so it
+  /// is only ever handed out for the origin that issued it.
+  static String? _solvedCookieOrigin;
+
+  /// Cookie to attach to requests against the currently adopted origin, or
+  /// null when there is none for it.
+  static String? get solvedCookie =>
+      (_solvedCookie != null && _current != null && _solvedCookieOrigin == _current)
+          ? _solvedCookie
+          : null;
+
   static bool get resolved => _resolved;
 
   static String? get current => _current;
@@ -126,16 +144,43 @@ class EndpointResolver {
   static Future<bool> _doResolve() async {
     final prefs = await SharedPreferences.getInstance();
     var saved = prefs.getString(_prefsKey);
-    // Purge an origin remembered from a previous backend: a stale remote host
-    // must not win the fast path and re-break the app after the switch to the
-    // local server. The known live origin is exempt — it is a valid fallback
-    // on any device (release APKs), just never preferred over a live local dev
-    // server.
-    if (saved != null && !_isLocalOrigin(saved) && !_isLiveOrigin(saved)) {
+    // Purge any stale local origin remembered from previous dev sessions
+    if (saved != null && _isLocalOrigin(saved)) {
       await prefs.remove(_prefsKey);
+      await prefs.remove(_lanKey);
       saved = null;
     }
 
+    // 1. Explicit compile-time override (e.g. --dart-define=API_BASE_URL=...)
+    if (_override.isNotEmpty) {
+      final normalizedOverride = _normalize(_override);
+      if (normalizedOverride != null && await _probe(normalizedOverride)) {
+        return _adopt(prefs, normalizedOverride);
+      }
+    }
+
+    // 2. Primary Online Production Host
+    final liveList = <String>[];
+    if (saved != null && _isLiveOrigin(saved)) {
+      final normalizedSaved = _normalize(saved);
+      if (normalizedSaved != null) liveList.add(normalizedSaved);
+    }
+    for (final candidate in _liveCandidates) {
+      if (!liveList.contains(candidate)) liveList.add(candidate);
+    }
+
+    if (liveList.isNotEmpty) {
+      final answers = await Future.wait(
+        liveList.map((candidate) => _probe(candidate)),
+      );
+      for (var i = 0; i < liveList.length; i++) {
+        if (answers[i]) {
+          return _adopt(prefs, liveList[i]);
+        }
+      }
+    }
+
+    // 3. Fallback: Local dev candidates (offline development fallback only)
     final local = <String>[];
     void add(List<String> into, String? url) {
       final normalized = _normalize(url);
@@ -143,91 +188,23 @@ class EndpointResolver {
       if (!into.contains(normalized)) into.add(normalized);
     }
 
-    if (_isLocalOrigin(_override)) add(local, _override);
-    // The Wi-Fi origin the backend reported for itself goes first: it is the
-    // only local address that keeps answering after the USB cable is pulled.
-    var lanOrigin = _lanOrigin ?? prefs.getString(_lanKey);
-    if (lanOrigin != null && !_isLocalOrigin(lanOrigin)) {
-      await prefs.remove(_lanKey);
-      lanOrigin = null;
-    }
-    _lanOrigin = lanOrigin;
-    add(local, lanOrigin);
-
-    // Last known-good origin keeps the fast path — but never persist a raw
-    // loopback origin (localhost / 127.0.0.1): those only work on the same
-    // machine and survive neither a network switch nor a cold start where the
-    // dev server was started after the app.
-    // On a local dev machine, probe the compile-time localhost override first,
-    // before the broader candidate list, so the splash can reach php -S without
-    // waiting on a LAN sweep or a stale remembered IP.
-    if (_override != '' &&
-        _isLocalOrigin(_override) &&
-        await _probe(
-          _override.replaceFirst(RegExp(r'/$'), ''),
-          quick: true,
-        )) {
-      return _adopt(prefs, _override.replaceFirst(RegExp(r'/$'), ''));
-    }
-    // Explicit remote override (e.g. --dart-define=API_BASE_URL=https://…):
-    // honoured first when it actually answers, so a device can be pointed at
-    // the live platform on demand.
-    if (_override != '' && !_isLocalOrigin(_override)) {
-      final normalizedOverride = _normalize(_override);
-      if (normalizedOverride != null && await _probe(normalizedOverride)) {
-        return _adopt(prefs, normalizedOverride);
-      }
-    }
-    // A remembered live origin is not a local candidate — it is probed last,
-    // after every local option, so starting a dev server still wins.
-    final savedLive =
-        (saved != null && _isLiveOrigin(saved)) ? _normalize(saved) : null;
-    if (saved != null && !_isLiveOrigin(saved) && !_isLoopbackOrigin(saved)) {
-      add(local, saved);
-    }
-
     for (final candidate in _localCandidates) {
       add(local, candidate);
     }
-    // On web the API is served from the page's own origin: that is the live
-    // endpoint for a deployed build, and loopback for a local dev build.
     for (final runtime in _runtimeCandidates) {
       if (_isLocalOrigin(runtime)) add(local, runtime);
     }
 
-    final configured = await _probeLocal(local);
-    var winner = configured ?? await _discoverLanOrigin();
+    final localWinner = await _probeLocal(local);
+    if (localWinner != null) return _adopt(prefs, localWinner);
 
-    // Fallback: the live platform. Keeps events, auth, payments, favorites
-    // and notifications working on any device with no dev server in sight.
-    // Probed WITHOUT the quick budget: this host fronts an anti-bot challenge
-    // that needs a second attempt (fresh cookie) to pass.
-    if (winner == null) {
-      final liveList = <String>[];
-      if (savedLive != null) liveList.add(savedLive);
-      liveList.addAll(_liveCandidates.where((c) => c != savedLive));
-      if (liveList.isNotEmpty) {
-        final answers = await Future.wait(
-          liveList.map((candidate) => _probe(candidate)),
-        );
-        for (var i = 0; i < liveList.length; i++) {
-          if (answers[i]) {
-            winner = liveList[i];
-            break;
-          }
-        }
-      }
-    }
-
-    if (winner != null) return _adopt(prefs, winner);
-
-    // Leave discovery unlocked so a dev server started later can be found.
+    // Leave discovery unlocked so a server started later can be found.
     _resolved = false;
     _inflight = null;
     return false;
   }
 
-  /// Records the LAN origin the backend advertises for itself (`lan_url` in
+    /// Records the LAN origin the backend advertises for itself (`lan_url` in
   /// `GET /config/app`, e.g. `http://192.168.1.43:8000`).
   ///
   /// Called once the app has reached the server through *any* origin — USB
@@ -235,6 +212,7 @@ class EndpointResolver {
   /// with the cable unplugged. Triggering a re-probe here is safe: the value is
   /// remembered before resolving, so this can only fire once per address.
   static void rememberLanOrigin(String? url) {
+    if (_current != null && !_isLocalOrigin(_current!)) return;
     final normalized = _normalize(url);
     if (normalized == null || !_isLocalOrigin(normalized)) return;
     if (_lanOrigin == normalized) return;
@@ -424,12 +402,16 @@ class EndpointResolver {
 
     try {
       final attempts = quick ? 1 : 2;
+      var solvedChallenge = false;
       for (var attempt = 0; attempt < attempts; attempt++) {
-        if (attempt > 0) {
+        if (attempt > 0 && !solvedChallenge) {
           // The local PHP dev server is single-threaded and can queue this
           // probe behind a slow DB-backed request — retry before giving up.
+          // A solved anti-bot challenge needs no cool-down: the cookie is
+          // already in hand, so replay straight away (saves ~1s per boot).
           await Future.delayed(const Duration(seconds: 1));
         }
+        solvedChallenge = false;
         final Response<dynamic> response;
         try {
           response = await dio.get<dynamic>('/config/app');
@@ -448,6 +430,12 @@ class EndpointResolver {
           final cookie = HostChallenge.solve(data);
           if (cookie == null) return false;
           dio.options.headers['Cookie'] = cookie;
+          // Hand the cookie to ApiClient so the first data request does not
+          // have to solve the very same challenge all over again. Scoped to
+          // this origin: the cookie is only valid for the host that minted it.
+          _solvedCookie = cookie;
+          _solvedCookieOrigin = base;
+          solvedChallenge = true;
           continue;
         }
         return false;

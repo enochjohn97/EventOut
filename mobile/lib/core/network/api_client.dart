@@ -28,7 +28,7 @@ class ApiClient {
 
   /// Start on the Android emulator's host loopback until local discovery
   /// selects the running PHP server.
-  static const _defaultBaseUrl = 'http://10.0.2.2:8000/api';
+  static const _defaultBaseUrl = 'https://eventout.com.ng/api';
 
   ApiClient._internal() {
     final parsedBaseUrl = Uri.tryParse(_defaultBaseUrl);
@@ -100,7 +100,7 @@ class ApiClient {
     };
 
     // Preserve a challenge cookie obtained by [EndpointResolver] across switches.
-    final existingCookie = _bypassCookie;
+    final existingCookie = _bypassCookie ?? EndpointResolver.solvedCookie;
     if (existingCookie != null) {
       dio.options.headers['Cookie'] = existingCookie;
     }
@@ -115,6 +115,12 @@ class ApiClient {
           // Outbound requests send plaintext over TLS; client-side device key
           // encryption cannot be decrypted by the backend server.
           // Track retry count via extra map
+          // Adopt the anti-bot cookie the endpoint probe already solved so a
+          // cold start does not pay for the challenge twice.
+          final bypass = _bypassCookie ?? EndpointResolver.solvedCookie;
+          if (bypass != null && !options.headers.containsKey('Cookie')) {
+            options.headers['Cookie'] = bypass;
+          }
           options.extra['_retryCount'] ??= 0;
           return handler.next(options);
         },
@@ -476,7 +482,8 @@ class ApiClient {
     }
     try {
       return opts.copyWith(
-        baseUrl: '${target.scheme}://${target.authority}',
+        baseUrl:
+            '${opts.baseUrl.startsWith('https://') ? 'https' : target.scheme}://${target.authority}',
         path: target.path,
         queryParameters: Map<String, dynamic>.from(target.queryParameters),
       );

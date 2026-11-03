@@ -32,7 +32,10 @@ class _SplashScreenState extends State<SplashScreen>
   bool _signedIn = false;
   bool _isSigningIn = false;
 
-  /// 3-second springy entrance for the complete EventOut wordmark.
+  /// Springy entrance for the complete EventOut wordmark.
+  ///
+  /// Kept well under a second so the Google button is tappable inside the
+  /// 3-second budget the app targets (the reveal below starts right after).
   late final AnimationController _entryController;
   late final Animation<double> _entryScale;
   late final Animation<double> _entryFade;
@@ -61,7 +64,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _entryController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 850),
     );
     _entryScale = Tween<double>(begin: 0.72, end: 1.0).animate(
       CurvedAnimation(parent: _entryController, curve: Curves.elasticOut),
@@ -81,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _revealController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 550),
     );
     _subtitleIn = CurvedAnimation(
       parent: _revealController,
@@ -135,14 +138,17 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      final apiAvailable = await EndpointResolver.resolve(force: true);
+      // Only pay for a fresh probe when discovery has not settled yet — a
+      // re-resolve on every tap adds ~1s to the sign-in round trip.
+      final apiAvailable = EndpointResolver.resolved
+          ? true
+          : await EndpointResolver.resolve(force: true);
       if (!mounted || !context.mounted) return;
       if (!apiAvailable) {
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
-              "Cannot reach the local server. On a phone, use your computer's "
-              'LAN IP and start PHP on 0.0.0.0:8000.',
+              'Cannot connect to EventOut server. Please check your internet connection.',
             ),
           ),
         );

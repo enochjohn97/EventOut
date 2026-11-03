@@ -11,7 +11,7 @@ Flutter companion app for Eventra attendees.
 
 ### Manual steps required outside the code (Android)
 
-1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist and its **Authorized JavaScript origins** must include your API host (`https://eventra-website.liveblog365.com`, plus `http://localhost:8080` for local dev).
+1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist and its **Authorized JavaScript origins** must include your API host (`https://eventout.com.ng`, plus `http://localhost:8080` for local dev).
 2. Register the app's **SHA-1 and SHA-256 fingerprints** on the **Android** OAuth client:
    - debug keystore: `cd android && ./gradlew signingReport` (or `keytool -list -v -alias androiddebugkey -keystore %USERPROFILE%\.android\debug.keystore -storepass android`)
    - release keystore: run the same `keytool` command against your release keystore.
@@ -31,7 +31,7 @@ Flutter companion app for Eventra attendees.
 
 **You do not need to run a local server for Google sign-in (or anything else).**
 By default the app targets the production API
-(`https://eventra-website.liveblog365.com/api`); `EndpointResolver` only falls
+(`https://eventout.com.ng/api`); `EndpointResolver` only falls
 back to local dev origins when the live host does not answer, never probes a
 stale local origin ahead of production, pins production when nothing answers,
 and the `/auth/google` exchange re-probes and retries once if the picked origin
@@ -47,7 +47,7 @@ stops accepting connections mid-session.
    - iOS simulator: `--dart-define=API_BASE_URL=http://127.0.0.1:8000/api`
    - Flutter web in a local browser: `--dart-define=API_BASE_URL=http://localhost:8000/api`
    - Physical device: use your computer's current Wi-Fi IPv4 address, e.g. `http://192.168.1.43:8000/api` (not the router address such as `192.168.1.1`; a phone's `localhost` points to the phone). If the override is omitted or stale, the app searches the phone's private Wi-Fi subnet for the PHP API.
-   - Production: `https://eventra-website.liveblog365.com/api` (default)
+   - Production: `https://eventout.com.ng/api` (default)
    - Add `GOOGLE_ANDROID_CLIENT_ID` and `GOOGLE_IOS_CLIENT_ID` for the native
      OAuth clients, plus `GOOGLE_SERVER_CLIENT_ID` for the backend web client
      (the audience the Android token is minted for).

@@ -21,7 +21,7 @@ Future<void> main() async {
 
   const base = String.fromEnvironment(
     'BASE',
-    defaultValue: 'https://eventra-website.liveblog365.com/api',
+    defaultValue: 'https://eventout.com.ng/api',
   );
 
   for (final path in ['/config/app']) {

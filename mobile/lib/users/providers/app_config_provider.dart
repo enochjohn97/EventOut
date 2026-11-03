@@ -13,7 +13,23 @@ class AppConfigProvider extends ChangeNotifier {
   bool paystackIsTestMode = false;
   String appUrl = '';
 
+  /// In-flight load, so concurrent callers (main + splash) share one request
+  /// instead of the second one returning before config is actually ready.
+  Future<void>? _inflight;
+
   Future<void> load({bool force = false}) async {
+    if (isLoaded && !force) return;
+    if (_inflight != null) return _inflight!;
+    final future = _load(force: force);
+    _inflight = future;
+    try {
+      await future;
+    } finally {
+      _inflight = null;
+    }
+  }
+
+  Future<void> _load({required bool force}) async {
     if ((isLoaded && !force) || isLoading) return;
     isLoading = true;
     snackbar = null;

@@ -22,7 +22,7 @@
          migrates. -->
 
     <!-- <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">eventra-website.liveblog365.com</domain>
+        <domain includeSubdomains="true">eventout.com.ng</domain>
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

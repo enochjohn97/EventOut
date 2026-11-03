@@ -853,7 +853,7 @@ function getShareOrigin() {
   const origin = window.location.origin;
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(origin);
   if (!isLocal) return origin;
-  const configured = window.SHARE_ORIGIN || "https://eventra-website.liveblog365.com";
+  const configured = window.SHARE_ORIGIN || "https://eventout.com.ng";
   return configured.replace(/\/$/, "");
 }
 
