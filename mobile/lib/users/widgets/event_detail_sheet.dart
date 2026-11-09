@@ -103,13 +103,16 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
   }
 
   Future<void> _openMaps() async {
-    final config = context.read<AppConfigProvider>();
-    final query = Uri.encodeComponent(EventUtils.mapsQuery(_event));
-    final url = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$query&key=${config.mapsApiKey}',
+    final url = Uri.https(
+      'www.google.com',
+      '/maps/search/',
+      {'api': '1', 'query': EventUtils.mapsQuery(_event)},
     );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps.')),
+      );
     }
   }
 

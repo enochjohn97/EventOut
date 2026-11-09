@@ -995,15 +995,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                 const Spacer(),
                 TextButton(
                   onPressed: () {
-                    setState(() {
-                      _category = null;
-                      _state = null;
-                      _priority = null;
-                      _freeOnly = false;
-                      _priceMin = null;
-                      _priceMax = null;
-                      _priceBucket = null;
-                    });
+                    widget.provider.clearFilters();
+                    widget.provider.loadEvents(refresh: true);
+                    Navigator.pop(context, true);
                   },
                   child: const Text('Reset'),
                 ),

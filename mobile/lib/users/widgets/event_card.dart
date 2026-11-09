@@ -31,54 +31,78 @@ class EventCard extends StatelessWidget {
             : '');
     final passed = EventUtils.isPassed(event);
 
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: InkWell(
-        onTap: onTap,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: 132,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  imageUrl.isEmpty
-                      ? _fallbackImage()
-                      : CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) => Container(color: Colors.grey.shade200),
-                          errorWidget: (_, _, _) => _fallbackImage(),
-                        ),
-                  if (EventUtils.priorityBadge(event) != null)
-                    Positioned(
-                      top: 9,
-                      left: 9,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: Text(
-                          EventUtils.priorityBadge(event)!,
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 360;
+        final image = _eventImage(imageUrl);
+        final details = _details(passed: passed, compact: compact);
+        return Card(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          child: InkWell(
+            onTap: onTap,
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [SizedBox(height: 104, child: image), details],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(width: 132, child: image),
+                      Expanded(child: details),
+                    ],
+                  ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _eventImage(String imageUrl) => Stack(
+        fit: StackFit.expand,
+        children: [
+          imageUrl.isEmpty
+              ? _fallbackImage()
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(color: Colors.grey.shade200),
+                  errorWidget: (_, _, _) => _fallbackImage(),
+                ),
+          if (EventUtils.priorityBadge(event) != null)
+            Positioned(
+              top: 9,
+              left: 9,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  EventUtils.priorityBadge(event)!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 11, 10, 11),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+        ],
+      );
+
+  Widget _details({required bool passed, required bool compact}) => Padding(
+        padding: compact
+            ? const EdgeInsets.fromLTRB(12, 8, 12, 12)
+            : const EdgeInsets.fromLTRB(14, 11, 10, 11),
+        child: Column(
+          mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -129,7 +153,7 @@ class EventCard extends StatelessWidget {
                           _detail(Icons.sell_outlined, event.category!),
                       ],
                     ),
-                    const Spacer(),
+                    if (!compact) const Spacer(),
                     Row(
                       children: [
                         Expanded(
@@ -151,15 +175,9 @@ class EventCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
-      ),
-    );
-  }
+      );
 
   Widget _detail(IconData icon, String text) => Row(
         mainAxisSize: MainAxisSize.min,

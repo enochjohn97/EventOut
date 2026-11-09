@@ -76,7 +76,7 @@ class EventsProvider extends ChangeNotifier {
 
   /// Loads the current page. `refresh` restarts from page 1.
   Future<void> loadEvents({bool refresh = false}) async {
-    if (isLoading || isLoadingMore) return;
+    if ((isLoading || isLoadingMore) && !refresh) return;
     if (refresh) _page = 1;
 
     final requestId = ++_requestId;

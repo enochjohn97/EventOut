@@ -23,20 +23,16 @@ class Breakpoints {
     return 0.75;
   }
 
-  /// Height one event card needs: a 16:10 image plus the compact text body
-  /// (date + price row, optional id/category). The title now sits on the image
-  /// scrim, so the body is shorter than it used to be. An explicit extent
-  /// (rather than an aspect ratio) is what keeps the cards from showing a tall
-  /// empty block under their price row; the text scale is respected so larger
-  /// system fonts still fit.
+  /// Height one event card needs. Narrow cards stack the image above the
+  /// details; wider cards keep the compact side-by-side layout.
   static double cardExtent({
     required double gridWidth,
     required int columns,
     required double textScale,
   }) {
-    // EventCard is a horizontal list card: artwork on the left and the
-    // event's real date, venue, category and price on the right.
-    return 164 * textScale.clamp(1.0, 1.35);
+    final cardWidth = (gridWidth - (columns - 1) * 16) / columns;
+    final height = cardWidth < 360 ? 280.0 : 164.0;
+    return height * textScale.clamp(1.0, 1.35);
   }
 
   /// Max width for single-column lists (tickets) on large screens.
