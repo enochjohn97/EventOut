@@ -27,7 +27,109 @@ $data = json_decode(file_get_contents("php://input"), true);
 
 
 // Verify Google JWT credential using Google tokeninfo endpoint
-require_once __DIR__ . '/../../config/google.php';
+$googleConfig = require __DIR__ . '/../../config/google.php';
+
+/**
+ * Browser OAuth fallback for the mobile apps.
+ *
+ * Native Google Sign-In on Android only mints an ID token for a package +
+ * SHA-1 that is registered as an Android OAuth client, so every APK/AAB
+ * signing key would need its own registration. This code flow authenticates
+ * against the live domain instead (eventout.com.ng), so a build works without
+ * per-key console entries.
+ *
+ *  GET ?oauth=1&mobile=1  → redirect to Google
+ *  GET ?code=...&state=... → exchange the code, then reuse the shared token
+ *                            verification below and hand the session back to
+ *                            the app through eventout://auth?token=...
+ */
+// Pin the live domain (APP_URL → https://eventout.com.ng) so the redirect URI
+// matches the one registered for the web client; only a local dev server
+// falls back to its own request host.
+$oauthOrigin = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/');
+if ($oauthOrigin === '') {
+    $oauthOrigin = rtrim((string) ($googleConfig['origin'] ?? ''), '/');
+}
+if ($oauthOrigin === '') {
+    $oauthOrigin = 'https://eventout.com.ng';
+}
+$oauthRedirectUri = $oauthOrigin . '/api/auth/google-handler.php';
+$oauthMobile = false;
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
+    $requestedIntent = ($_GET['intent'] ?? '') === 'client' ? 'client' : 'user';
+
+    if (!empty($_GET['code'])) {
+        $state = (string) ($_GET['state'] ?? '');
+        $oauthMobile = strpos($state, 'mobile:') === 0;
+        if ($oauthMobile) {
+            $requestedIntent = substr($state, 7) === 'client' ? 'client' : 'user';
+        }
+
+        $ch = curl_init('https://oauth2.googleapis.com/token');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query([
+                'code' => $_GET['code'],
+                'client_id' => $googleConfig['client_id'] ?? '',
+                'client_secret' => $googleConfig['client_secret'] ?? '',
+                'redirect_uri' => $oauthRedirectUri,
+                'grant_type' => 'authorization_code',
+            ]),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+        ]);
+        $tokenBody = curl_exec($ch);
+        $tokenJson = is_string($tokenBody) ? json_decode($tokenBody, true) : null;
+        $idToken = is_array($tokenJson) ? (string) ($tokenJson['id_token'] ?? '') : '';
+
+        if ($idToken === '') {
+            error_log('[Google Auth] OAuth code exchange failed: ' . substr((string) $tokenBody, 0, 300));
+            echo json_encode([
+                'success' => false,
+                'message' => 'Google sign-in could not be completed. Please try again.',
+            ]);
+            exit;
+        }
+
+        // Hand off to the verified-token path below (same audience/email checks).
+        $data = ['credential' => $idToken, 'intent' => $requestedIntent];
+    } else {
+        $oauthMobile = ($_GET['mobile'] ?? '') === '1';
+        $authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
+            'client_id' => $googleConfig['client_id'] ?? '',
+            'redirect_uri' => $oauthRedirectUri,
+            'response_type' => 'code',
+            'scope' => 'openid email profile',
+            'state' => ($oauthMobile ? 'mobile:' : 'web:') . $requestedIntent,
+            'prompt' => 'select_account',
+        ]);
+        header('Location: ' . $authUrl);
+        exit;
+    }
+}
+
+// App-initiated flow: return the outcome through the app's deep link instead
+// of rendering JSON in the browser. Buffered so every exit path (including the
+// global exception handler) is converted into one redirect.
+if ($oauthMobile) {
+    ob_start();
+    register_shutdown_function(static function (): void {
+        $body = (string) ob_get_clean();
+        $json = json_decode($body, true);
+        $query = [];
+        if (is_array($json) && ($json['success'] ?? false) === true && !empty($json['token'])) {
+            $query['token'] = (string) $json['token'];
+        } else {
+            $query['error'] = is_array($json)
+                ? (string) ($json['message'] ?? 'Google sign-in failed.')
+                : 'Google sign-in failed.';
+        }
+        header('Location: eventout://auth?' . http_build_query($query));
+        http_response_code(302);
+    });
+}
 
 if (!isset($data['credential']) || empty($data['credential'])) {
     if (!empty($data['id_token'])) {

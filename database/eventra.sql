@@ -11,8 +11,8 @@ CREATE DATABASE IF NOT EXISTS eventra_db
 DROP USER IF EXISTS 'eventra'@'localhost';
 DROP USER IF EXISTS 'eventra'@'127.0.0.1';
 
-CREATE USER 'eventra'@'localhost' IDENTIFIED BY '';
-CREATE USER 'eventra'@'127.0.0.1' IDENTIFIED BY '';
+CREATE USER 'eventra'@'localhost' IDENTIFIED BY 'Eventout@123';
+CREATE USER 'eventra'@'127.0.0.1' IDENTIFIED BY 'Eventout@123';
 
 GRANT ALL PRIVILEGES ON eventra_db.* TO 'eventra'@'localhost';
 GRANT ALL PRIVILEGES ON eventra_db.* TO 'eventra'@'127.0.0.1';

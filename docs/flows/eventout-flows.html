@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>EventOut — Web &amp; Mobile Flow Guide</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #1f2937; font-size: 10.2pt; line-height: 1.5; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1, h2, h3, h4 { color: #0f172a; margin: 0 0 6px; line-height: 1.2; break-after: avoid; }
+  h2 { font-size: 16.5pt; border-bottom: 3px solid #2563eb; padding-bottom: 5px; margin-top: 0; }
+  h3 { font-size: 12pt; margin-top: 14px; color: #1d4ed8; }
+  p { margin: 0 0 7px; }
+  ul, ol { margin: 0 0 9px; padding-left: 18px; }
+  li { margin-bottom: 2px; }
+  code { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px; padding: 0 3px; font-size: 8.6pt; }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .cover { padding-top: 42mm; }
+  .cover .brand { color: #e53935; font-size: 32pt; font-weight: 800; letter-spacing: -1px; }
+  .cover h1 { font-size: 27pt; margin: 8px 0 6px; }
+  .cover .sub { color: #475569; font-size: 12pt; }
+  .cover .meta { margin-top: 34mm; font-size: 9.5pt; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  .cover .meta p { margin: 0 0 3px; }
+  .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+           border-radius: 999px; padding: 2px 10px; font-size: 8.5pt; font-weight: 600; margin-right: 6px; }
+  .shot { border: 1px solid #dbe2ea; border-radius: 7px; overflow: hidden; margin: 6px 0 3px; background: #fff;
+          break-inside: avoid; text-align: center; }
+  .shot img { display: block; width: auto; max-width: 100%; max-height: 68mm; margin: 0 auto; }
+  .shot.tall img { max-height: 148mm; }
+  .shot.half img { max-height: 64mm; }
+  .shot.lg img { max-height: 74mm; }
+  .shot.md img { max-height: 58mm; }
+  .cap { font-size: 8.4pt; color: #64748b; margin: 2px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 11px; font-size: 9.1pt; }
+  th, td { border: 1px solid #e2e8f0; padding: 5px 7px; vertical-align: top; text-align: left; }
+  th { background: #f8fafc; font-weight: 600; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 6px 0 10px; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 25px; margin-bottom: 4px; break-inside: avoid; }
+  .steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: 1px;
+    width: 16px; height: 16px; border-radius: 50%; background: #2563eb; color: #fff;
+    font-size: 8.2pt; font-weight: 700; text-align: center; line-height: 16px;
+  }
+  .note { background: #f8fafc; border-left: 4px solid #2563eb; padding: 7px 10px; font-size: 9.2pt; margin: 7px 0 10px; border-radius: 4px; }
+  .flow { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 6px 0 12px; }
+  .node { border: 1.5px solid #c7d2fe; background: #eef2ff; color: #1e3a8a; border-radius: 6px;
+          padding: 4px 8px; font-size: 8.4pt; font-weight: 600; }
+  .node.alt { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; }
+  .node.auth { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+  .arrow { color: #94a3b8; font-size: 9.5pt; }
+  .toc li { margin-bottom: 4px; font-size: 10pt; }
+  .kicker { text-transform: uppercase; letter-spacing: 1.5px; font-size: 8pt; color: #2563eb; font-weight: 700; }
+  .small { font-size: 8.8pt; color: #475569; }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<section class="page cover">
+  <div class="brand">EventOut</div>
+  <h1>Web &amp; Mobile Flow Guide</h1>
+  <p class="sub">Step-by-step walkthrough of every attendee, organizer and admin flow — with screen captures.</p>
+  <p class="sub" style="margin-top:14px">
+    <span class="badge">Attendee web</span><span class="badge">Organizer portal</span><span class="badge">Admin portal</span><span class="badge">Mobile app</span><span class="badge">Payments</span><span class="badge">QR ticketing</span>
+  </p>
+  <div class="meta">
+    <p><strong>Product:</strong> EventOut — PHP 8.2+ · MySQL · Vanilla JS · Flutter attendee app</p>
+    <p><strong>Document date:</strong> 6 November 2026</p>
+    <p><strong>Contents:</strong> Flow A attendee purchase · Flow B organizer portal · Flow C admin portal · Flow D mobile app</p>
+  </div>
+</section>
+
+<!-- CONTENTS -->
+<section class="page">
+  <h2>Contents</h2>
+  <ol class="toc">
+    <li><strong>Roles &amp; entry points</strong></li>
+    <li><strong>Flow A — Attendee: discover &amp; buy a ticket (web)</strong>
+      <ul class="small"><li>A1 Home &amp; discovery · A2 Event preview · A3 Checkout · A4 Payment · A5 Ticket delivery</li></ul>
+    </li>
+    <li><strong>Flow B — Organizer (client) portal</strong>
+      <ul class="small"><li>B1 Login · B2 Password recovery · B3 Dashboard · B4 Events · B5 Tickets &amp; scanning · B6 Payments · B7 Users · B8 Media</li></ul>
+    </li>
+    <li><strong>Flow C — Admin portal</strong>
+      <ul class="small"><li>C1 Login · C2 Dashboard · C3 Events · C4 Archive · C5 Tickets · C6 Payments · C7 Clients</li></ul>
+    </li>
+    <li><strong>Flow D — Mobile attendee app (Flutter)</strong>
+      <ul class="small"><li>D1 Launch &amp; onboarding · D2 Google sign-in · D3 Home · D4 Checkout · D5 Payment · D6 Tickets · D7 Favorites · D8 Profile</li></ul>
+    </li>
+    <li><strong>Appendix</strong> — route map and shared API reference</li>
+  </ol>
+
+  <h3>Roles &amp; entry points</h3>
+  <table>
+    <tr><th>Role</th><th>Entry point</th><th>What they do</th></tr>
+    <tr><td>Attendee (web)</td><td><code>/</code> → <code>/index.html</code></td><td>Browse, search, preview, buy tickets, receive QR ticket</td></tr>
+    <tr><td>Attendee (mobile)</td><td>Flutter app → Google sign-in</td><td>Browse, favourite, buy, keep tickets offline</td></tr>
+    <tr><td>Organizer / client</td><td><code>/client/login.html</code></td><td>Create &amp; publish events, scan tickets, view sales, manage team and media</td></tr>
+    <tr><td>Admin</td><td><code>/admin/login.html</code></td><td>Platform-wide events, tickets, payments and client accounts</td></tr>
+  </table>
+  <p class="small">Blue numbered bullets are UI actions in order. Orange nodes mark authentication gates. Every portal screen is scoped to the signed-in account.</p>
+</section>
+
+<!-- FLOW A -->
+<section class="page">
+  <div class="kicker">Flow A — Attendee (web)</div>
+  <h2>Discover &amp; buy a ticket</h2>
+  <div class="flow">
+    <span class="node">Home / search</span><span class="arrow">→</span>
+    <span class="node">Event preview</span><span class="arrow">→</span>
+    <span class="node auth">Sign in</span><span class="arrow">→</span>
+    <span class="node">Checkout</span><span class="arrow">→</span>
+    <span class="node alt">Paystack</span><span class="arrow">→</span>
+    <span class="node alt">QR ticket</span>
+  </div>
+
+  <h3>A1 — Home &amp; discovery</h3>
+  <div class="shot tall"><img src="img/users-homepage.jpg" alt="EventOut home page" /></div>
+  <p class="cap">Public home page: hero with search, holiday alert, filter rail and the live event grid.</p>
+  <ol class="steps">
+    <li>Open <code>https://eventout.com.ng/</code>. The hero loads with the search bar and main navigation (Home, Events, About, Contact).</li>
+    <li>Type an event name, organizer or category into <em>Search events, organizers, categories</em> and press Enter; results replace the grid.</li>
+    <li>Use the <strong>Filter</strong> rail — Event Category, Location (State), Priority Tags, Status, <em>Show only Free</em> — and <strong>Reset</strong> to clear.</li>
+    <li>Sort with <em>Sort by: Newest First</em>; the grid re-queries <code>/api/events</code>.</li>
+    <li>Read a card: banner with category and <em>Upcoming</em> pill, date · time, name, venue, state, description, organizer with verified tick, price, heart and share.</li>
+    <li>Tap the heart to save to favourites; tap share to copy the short link <code>/e/&lt;tag&gt;</code>.</li>
+    <li>Click the card to open the event preview.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>A2 — Event preview</h3>
+  <div class="shot"><img src="img/users-homepage-event-preview-modal.jpg" alt="Event preview" /></div>
+  <p class="cap">Event preview: banner, name, organizer, date/time, venue, category, status pill, “About this event” and the ticket panel.</p>
+  <ol class="steps">
+    <li>The preview opens above the dimmed listing, or directly through <code>/event-details.html?event=&lt;tag&gt;</code> (short form <code>/e/&lt;tag&gt;</code>).</li>
+    <li>Confirm the essentials: title, “Organized by …” with verified tick, date and start time, full address and state.</li>
+    <li>Read <strong>Category</strong> and the status pill (<em>Upcoming</em> / <em>Ongoing</em> / <em>Past</em>).</li>
+    <li>Scroll <strong>About this event</strong> for the description and attendee information.</li>
+    <li>Continue to the ticket panel to choose a ticket type and quantity.</li>
+  </ol>
+
+  <h3>A3 — Checkout</h3>
+  <div class="shot"><img src="img/checkout-page.jpg" alt="Checkout page" /></div>
+  <p class="cap">Checkout: contact details on the left, event summary with quantity stepper and total on the right.</p>
+  <ol class="steps">
+    <li>Choose quantity and ticket type, then press <strong>Buy Ticket</strong> → <code>/checkout.html?id=&lt;eventId&gt;&amp;quantity=&lt;n&gt;&amp;type=&lt;ticketType&gt;</code>.</li>
+    <li>Sign in if prompted; you return to the same checkout with the event intact.</li>
+    <li>Enter <strong>Contact Information</strong>: first name, last name, email (receipts and tickets go here) and an 11-digit phone number.</li>
+    <li>Check the <strong>Event Summary</strong>: banner, title, date/time, venue, ticket type and description.</li>
+    <li>Adjust <strong>Quantity</strong> with the − / + stepper; <strong>Total</strong> updates live.</li>
+    <li>Press <strong>Checkout ₦…</strong>. Free events issue the ticket immediately; paid events open Paystack.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>A4 — Payment (Paystack)</h3>
+  <ol class="steps">
+    <li>On the Paystack page choose card, bank transfer or USSD and complete the charge.</li>
+    <li>Paystack returns to <code>/r/&lt;reference&gt;</code>, which resolves to the receipt page.</li>
+    <li>Fulfilment is webhook-driven, so the ticket is issued even if the browser is closed early.</li>
+    <li>While awaiting confirmation the page polls <code>/api/payments/verify</code> and shows <em>processing</em>; it switches to <em>success</em> once the webhook lands.</li>
+    <li>On success you see the ticket reference, event summary and a link to the ticket.</li>
+  </ol>
+
+  <h3>A5 — Ticket delivery</h3>
+  <ol class="steps">
+    <li>A ticket record is created with a signed QR payload that resolves through <code>/t/&lt;code&gt;</code>.</li>
+    <li>The ticket is emailed (and texted when SMS is enabled) with the short link.</li>
+    <li>Open <code>/t/&lt;code&gt;</code> to show the proof-of-purchase page with QR — this is what the organizer scans at the gate.</li>
+    <li>Lost the email? The same ticket is listed in the organizer portal and in the mobile app’s <em>Tickets</em> tab.</li>
+  </ol>
+  <table>
+    <tr><th>Stage</th><th>What happens</th></tr>
+    <tr><td>Initialize</td><td><code>POST /api/payments/initialize</code> builds the reference, amount, organizer split and channels</td></tr>
+    <tr><td>Webhook</td><td>Marks the payment paid, issues tickets, sends email/SMS</td></tr>
+    <tr><td>Verify</td><td><code>POST /api/payments/verify</code> — idempotent, returns success / processing / failed</td></tr>
+    <tr><td>Resend</td><td><code>POST /api/tickets/send</code> re-sends the ticket email</td></tr>
+  </table>
+  <div class="note">Every ticket carries a unique code, so one scan admits one attendee. Duplicate scans are rejected at the gate.</div>
+</section>
+
+<!-- FLOW B -->
+<section class="page">
+  <div class="kicker">Flow B — Organizer (client) portal</div>
+  <h2>Organizer workspace</h2>
+  <div class="flow">
+    <span class="node auth">Login</span><span class="arrow">→</span>
+    <span class="node">Dashboard</span><span class="arrow">→</span>
+    <span class="node">Events</span><span class="arrow">→</span>
+    <span class="node">Tickets + Scanner</span><span class="arrow">→</span>
+    <span class="node alt">Payments</span><span class="arrow">→</span>
+    <span class="node">Users</span><span class="arrow">→</span>
+    <span class="node">Media</span>
+  </div>
+
+  <h3>B1 — Log in</h3>
+  <div class="shot"><img src="img/client-login.jpg" alt="Organizer portal login" /></div>
+  <p class="cap">Organizer sign-in at <code>/client/login.html</code>.</p>
+  <ol class="steps">
+    <li>Open <code>/client/login.html</code> (short alias <code>/clientLogin.html</code>).</li>
+    <li>Enter the organizer email and password; the eye icon reveals the password.</li>
+    <li>Press <strong>Login →</strong>; the session is set and the portal shell loads.</li>
+    <li>New organizer? <em>Sign Up</em> creates the account; it is reviewed before paid events go live.</li>
+    <li>Forgotten password → <em>Forgot Password?</em> (B2).</li>
+  </ol>
+
+  <h3>B2 — Recover a password</h3>
+  <ol class="steps">
+    <li><code>/client/forgot-password.html</code>: enter the account email and submit.</li>
+    <li>The server emails a one-time reset link when the address exists.</li>
+    <li>Open the link → <code>/client/reset-password.html</code>: enter and confirm the new password.</li>
+    <li>The token is consumed and you sign in again at B1.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>B3 — Dashboard</h3>
+  <div class="shot md"><img src="img/client-dashboard.jpg" alt="Organizer dashboard" /></div>
+  <p class="cap">Dashboard overview: Events, Tickets, Users and Media counters, event list, recent sales and performance trends.</p>
+  <ol class="steps">
+    <li>After login the portal opens <code>/client/dashboard.html</code> with the sidebar (Dashboard, Events, Tickets, Payments, Users, Media).</li>
+    <li>Read the four counters: Events, Tickets, Users, Media.</li>
+    <li>In <strong>Events</strong> switch between <em>All Events</em> and <em>Past</em>, then use <strong>+ Create Event</strong>.</li>
+    <li>Check <strong>Recent Sales</strong> for buyer, ticket type, channel and amount; <em>View all</em> opens Payments.</li>
+    <li>Watch <strong>Performance Trends</strong> for revenue and tickets sold over the selected range.</li>
+    <li>Use the bell for reminder notifications (T-30 and T-5 minutes before an event).</li>
+  </ol>
+
+  <h3>B4 — Create &amp; publish an event</h3>
+  <div class="shot md"><img src="img/client-dashboard-events.jpg" alt="Organizer events management" /></div>
+  <p class="cap">Events: created / published / scheduled / deleted counters, Active Events and Trash tabs, and the event table.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Events</strong> (<code>/client/events.html</code>) → <strong>Create Event</strong>.</li>
+    <li>Fill the identity: event name, category, description, tag (used in the public <code>/e/&lt;tag&gt;</code> URL) and contact phone.</li>
+    <li>Set schedule and place: date, start time, state and address; add more locations for multi-venue events.</li>
+    <li>Add ticket types and prices (regular, VIP, table), capacity and sales end time; price 0 makes it free.</li>
+    <li>Upload banner and gallery media from the media library.</li>
+    <li>Save as draft, schedule a publish time, or publish now; scheduled drafts auto-publish through the cron job.</li>
+    <li>Review the row: event ID, name, date, category, ticket type, prices, capacity, sales, status and the public link.</li>
+    <li>Deleted events move to <strong>Trash</strong> and can be restored.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>B5 — Tickets &amp; gate scanning</h3>
+  <div class="shot"><img src="img/client-dashboard-tickets.jpg" alt="Organizer tickets" /></div>
+  <p class="cap">Tickets: sold, revenue, pending and cancelled counters, with the full ticket table and status badges.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Tickets</strong> (<code>/client/tickets.html</code>).</li>
+    <li>Confirm the counters: Tickets Sold, Total Revenue, Pending, Cancelled.</li>
+    <li>Find a ticket by ID, event, buyer, price, ticket type, category, date or status.</li>
+    <li>Open a row for attendee details, QR reference and check-in state; resend the ticket from there.</li>
+    <li>At the gate open <code>/client/scanner.html</code>, allow camera access and scan the attendee QR.</li>
+    <li>A valid unused ticket flips to checked in; a repeat scan reports “already used”; an unknown code reports “invalid ticket”.</li>
+    <li>Use manual check-in for damaged codes.</li>
+  </ol>
+
+  <h3>B6 — Payments &amp; payouts</h3>
+  <div class="shot"><img src="img/client-dashboard-payments.jpg" alt="Organizer payments" /></div>
+  <p class="cap">Payments: totals, transaction list and filters by view, time period and status.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Payments</strong> (<code>/client/payment.html</code>).</li>
+    <li>Read Total Payments, Successful, Total Revenue and Failed.</li>
+    <li>Switch <strong>View</strong> between <em>Transactions</em> and <em>Refund Requests</em>.</li>
+    <li>Filter by time period (All Time, Today, 7 Days, 30 Days) and status (All, Paid, Pending, Failed, Refunded).</li>
+    <li>Open a row for payer email, transaction ID, ticket count and settlement state.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>B7 — Team accounts</h3>
+  <div class="shot half"><img src="img/client-dashboard-users.jpg" alt="Organizer users" /></div>
+  <p class="cap">Users: active, engaged and registered counters with the attendee/team table.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Users</strong> (<code>/client/users.html</code>).</li>
+    <li>Review the counters and the list: user ID, name, email, phone, state, source, status, country and city.</li>
+    <li>Invite team members who may scan tickets or manage events; deactivate leavers.</li>
+  </ol>
+
+  <h3>B8 — Media library</h3>
+  <div class="shot half"><img src="img/client-dashboard-media.jpg" alt="Organizer media library" /></div>
+  <p class="cap">Media: folder and file counters, folder list, and the <em>Passed events archive</em> shortcut.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Media</strong> (<code>/client/media.html</code>).</li>
+    <li>Use <strong>+ New Folder</strong> to group assets (for example <em>Event Assets</em>).</li>
+    <li>Open a folder to upload banners and galleries; reuse an asset across events.</li>
+    <li>Switch the <em>Active</em> filter to review deleted or restored files; open <em>Passed events archive</em> for finished events.</li>
+  </ol>
+</section>
+
+<!-- FLOW C -->
+<section class="page">
+  <div class="kicker">Flow C — Admin portal</div>
+  <h2>Platform administration</h2>
+  <div class="flow">
+    <span class="node auth">Login</span><span class="arrow">→</span>
+    <span class="node">Dashboard</span><span class="arrow">→</span>
+    <span class="node">Events</span><span class="arrow">→</span>
+    <span class="node">Tickets</span><span class="arrow">→</span>
+    <span class="node alt">Payments</span><span class="arrow">→</span>
+    <span class="node">Clients</span>
+  </div>
+
+  <h3>C1 — Log in</h3>
+  <div class="shot"><img src="img/admin-login.jpg" alt="Admin login" /></div>
+  <p class="cap">Admin sign-in at <code>/admin/login.html</code> — username and password.</p>
+  <ol class="steps">
+    <li>Open <code>/admin/login.html</code> (alias <code>/adminLogin.html</code>).</li>
+    <li>Enter the admin username and password; press <strong>Login →</strong>.</li>
+    <li>The admin session is set and the portal opens on <code>/admin/dashboard.html</code>.</li>
+    <li>Admin and organizer sessions are separate — one never grants the other.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>C2 — Dashboard</h3>
+  <div class="shot"><img src="img/admin-dashboard.jpg" alt="Admin dashboard" /></div>
+  <p class="cap">Platform overview: total events, active users, active clients, verification counts, revenue, analytics, activity and upcoming events.</p>
+  <ol class="steps">
+    <li>Read the KPI cards: Total Events, Active Users, Active Clients, Unverified, Verified, Revenue.</li>
+    <li>Pick a range in <strong>Performance Analytics</strong> (for example <em>Last 7 Days</em>).</li>
+    <li>Scan <strong>Recent Activities</strong> for the newest signups, events and payments.</li>
+    <li>Use <strong>Active Users</strong> and <strong>Active Clients</strong> → <em>Manage</em> to jump to those pages.</li>
+    <li>Browse <strong>Upcoming Events</strong> with the arrows and open an event directly.</li>
+  </ol>
+
+  <h3>C3 — Events</h3>
+  <div class="shot"><img src="img/admin-dashboard-events.jpg" alt="Admin events management" /></div>
+  <p class="cap">Events management: platform-wide event table with status, tag, public link and filters.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Events</strong> (<code>/admin/events.html</code>).</li>
+    <li>Review counters: Events Created, Published, Deleted, Scheduled, Restored.</li>
+    <li>Filter by status, category, price and attendees.</li>
+    <li>Inspect a row: event ID, name, organizer, date, time, category, phone, price, attendees, tag, link and status.</li>
+    <li>Open the public page from the link icon, or manage the event from its row.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>C4 — Archive</h3>
+  <div class="shot half"><img src="img/admin-dashboard-archive.jpg" alt="Admin events archive" /></div>
+  <p class="cap">Archive: every event that has already taken place, with its own search.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Archive</strong>.</li>
+    <li>Search archived events by name or tag.</li>
+    <li>Open an archived event to review its tickets, sales and media.</li>
+  </ol>
+
+  <h3>C5 — Tickets</h3>
+  <div class="shot"><img src="img/admin-dashboard-tickets.jpg" alt="Admin tickets" /></div>
+  <p class="cap">Tickets management: issued, revenue, pending, scanned and cancelled, with every ticket on the platform.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Tickets</strong> (<code>/admin/tickets.html</code>).</li>
+    <li>Read Total Issued, Total Revenue, Pending, Scanned and Cancelled.</li>
+    <li>Search by ticket ID, event, buyer, price, category, date or status badge (Valid / Pending).</li>
+    <li>Open a ticket to resend it, verify payment, or check in the attendee manually.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>C6 — Payments</h3>
+  <div class="shot"><img src="img/admin-dashboard-payments.jpg" alt="Admin payments" /></div>
+  <p class="cap">Payments management: platform totals, transaction and refund views, filters and the full ledger.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Payments</strong> (<code>/admin/payments.html</code>).</li>
+    <li>Read Total Payments, Successful, Total Revenue and Failed.</li>
+    <li>Switch <strong>View</strong> to <em>Refund Requests</em> to action refunds.</li>
+    <li>Filter by time period and status (Paid, Pending, Failed, Refunded).</li>
+    <li>Reconcile a row with its transaction ID, organizer, amount, ticket count, user email and status.</li>
+  </ol>
+
+  <h3>C7 — Clients</h3>
+  <div class="shot"><img src="img/admin-dashboard-clients.jpg" alt="Admin clients" /></div>
+  <p class="cap">Clients management: registered, active and event-creating organizers with their profile records.</p>
+  <ol class="steps">
+    <li>Sidebar → <strong>Clients</strong> (<code>/admin/clients.html</code>).</li>
+    <li>Read Clients Registered, Clients Active and Clients Created Events.</li>
+    <li>Review the table: client ID, name, email, date of birth, gender, address, city, country, state, job title and account number.</li>
+    <li>Open a client to approve, suspend or inspect their events and payouts.</li>
+  </ol>
+  <div class="note">Approval here unlocks paid publishing for that organizer; suspension hides their live events from the attendee site.</div>
+</section>
+
+<!-- FLOW D -->
+<section class="page">
+  <div class="kicker">Flow D — Mobile attendee app (Flutter)</div>
+  <h2>EventOut mobile</h2>
+  <div class="flow">
+    <span class="node">Splash</span><span class="arrow">→</span>
+    <span class="node">Onboarding</span><span class="arrow">→</span>
+    <span class="node auth">Google sign-in</span><span class="arrow">→</span>
+    <span class="node">Profile</span><span class="arrow">→</span>
+    <span class="node alt">Home shell</span>
+  </div>
+  <p class="small">Signed-in tabs: <strong>Home · Favorites · Tickets · Profile</strong>. The app talks to the same API as the website.</p>
+
+  <h3>D1 — Launch, splash and onboarding</h3>
+  <ol class="steps">
+    <li><strong>Splash</strong> shows the brand while the app resolves the API origin, restores the stored session and warms the cached feed.</li>
+    <li>First launch shows <strong>Onboarding</strong> slides with <em>Skip</em> and <em>Continue</em>; the flag is stored so it never repeats.</li>
+    <li>No stored session → the app opens the sign-in screen instead of the feed.</li>
+    <li>Valid stored session → straight to <strong>Home</strong>, with the cached first page rendered instantly and refreshed in the background.</li>
+  </ol>
+
+  <h3>D2 — Sign in with Google</h3>
+  <ol class="steps">
+    <li>Press <strong>Continue with Google</strong> (Android Credential Manager, iOS Google Sign-In SDK).</li>
+    <li>Pick the Google account; the SDK returns an ID token.</li>
+    <li>The app posts it to <code>POST /api/auth/google</code> and receives a session token.</li>
+    <li>The token is stored securely and sent as <code>Authorization: Bearer …</code> on every request.</li>
+    <li>New accounts complete <strong>Profile</strong>: name, phone (11 digits), gender → <em>Save</em> → <code>PUT /api/profile</code> → Home.</li>
+  </ol>
+
+  <h3>D3 — Home feed</h3>
+  <ol class="steps">
+    <li>The feed lists published events with banner, name, date, venue and price; pull down to refresh.</li>
+    <li>Search and sort re-query <code>GET /api/events</code>; each combination caches its first page for instant offline launch.</li>
+    <li>Tap a card for the event detail sheet; tap the heart to save it to Favorites.</li>
+    <li>Tap an <em>event published</em> push notification to deep-link into that event, cold start included.</li>
+  </ol>
+</section>
+
+<section class="page">
+  <h3>D4 — Event details and checkout</h3>
+  <ol class="steps">
+    <li>The sheet shows banner, organizer, description, venue with map, date/time, ticket types and remaining capacity.</li>
+    <li><strong>Get Ticket</strong> opens <code>/checkout</code>; <strong>Get for someone else</strong> opens it in gift mode (recipient email only).</li>
+    <li>Confirm quantity and ticket type; the profile email and phone are pre-filled and the total shows ticket plus fees.</li>
+    <li>Press <strong>Pay</strong> → <code>POST /api/payments/initialize</code>, which builds the Paystack transaction with the organizer split.</li>
+  </ol>
+
+  <h3>D5 — Payment and success</h3>
+  <ol class="steps">
+    <li>The Paystack page opens in an in-app WebView — card, transfer or USSD.</li>
+    <li>After the charge the WebView closes and the app polls <code>POST /api/payments/verify</code> for about 15 seconds.</li>
+    <li>Success opens the success screen with the ticket reference and a shortcut to Tickets.</li>
+    <li><em>Processing</em> is not a failure: the ticket appears in Tickets as soon as the webhook lands.</li>
+  </ol>
+
+  <h3>D6 — Tickets</h3>
+  <ol class="steps">
+    <li>The <strong>Tickets</strong> tab lists your tickets with event, type, date and check-in state.</li>
+    <li>Tap a ticket for the full QR to show at the gate.</li>
+    <li>Lists are cached per account, so tickets open without a connection.</li>
+    <li>Resend a ticket by email from the ticket actions.</li>
+  </ol>
+
+  <h3>D7 — Favorites</h3>
+  <ol class="steps">
+    <li>The <strong>Favorites</strong> tab shows the events you hearted.</li>
+    <li>Toggling a heart calls <code>POST /api/favorites/toggle</code>; removing it drops the row.</li>
+    <li>The list is cached per account and visible offline.</li>
+  </ol>
+
+  <h3>D8 — Profile</h3>
+  <ol class="steps">
+    <li><strong>Profile</strong> shows name, email and phone; <em>Edit Profile</em> applies the same validation as web.</li>
+    <li>Terms, Privacy, Cookies and Delete your data open in-app.</li>
+    <li><em>Log Out</em> clears the token, cached favourites and cached tickets for that account, then returns to sign-in.</li>
+  </ol>
+</section>
+
+<!-- APPENDIX -->
+<section class="page">
+  <h2>Appendix</h2>
+
+  <h3>A. Route map</h3>
+  <table>
+    <tr><th>Short URL</th><th>Screen</th></tr>
+    <tr><td><code>/</code> → <code>/index.html</code></td><td>Public home &amp; discovery</td></tr>
+    <tr><td><code>/e/{tag}</code></td><td>Event preview / details</td></tr>
+    <tr><td><code>/e/{tag}/pay</code></td><td>Checkout for that event</td></tr>
+    <tr><td><code>/t/{code}</code></td><td>Ticket / QR proof page</td></tr>
+    <tr><td><code>/r/{ref}</code></td><td>Payment callback / receipt resolver</td></tr>
+    <tr><td><code>/s/{code}</code></td><td>Database-backed short link</td></tr>
+    <tr><td><code>/go/{admin|client|user}</code></td><td>Portal shortcut (login or dashboard)</td></tr>
+    <tr><td><code>/client/*.html</code></td><td>Organizer portal pages</td></tr>
+    <tr><td><code>/admin/*.html</code></td><td>Admin portal pages</td></tr>
+  </table>
+
+  <h3>B. API used by web and mobile</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+    <tr><td>POST</td><td><code>/api/auth/google</code></td><td>Google sign-in → session token</td></tr>
+    <tr><td>GET</td><td><code>/api/events</code></td><td>Paginated feed (<code>search</code>, <code>sort</code>, <code>page</code>, <code>limit</code>)</td></tr>
+    <tr><td>GET</td><td><code>/api/events/{id}</code></td><td>Event details</td></tr>
+    <tr><td>GET/POST</td><td><code>/api/favorites</code>, <code>/api/favorites/toggle</code></td><td>Saved events</td></tr>
+    <tr><td>GET/PUT</td><td><code>/api/profile</code></td><td>Read / update profile</td></tr>
+    <tr><td>POST</td><td><code>/api/payments/initialize</code></td><td>Start Paystack transaction</td></tr>
+    <tr><td>POST</td><td><code>/api/payments/verify</code></td><td>Idempotent verification</td></tr>
+    <tr><td>GET</td><td><code>/api/tickets</code></td><td>Attendee tickets</td></tr>
+    <tr><td>POST</td><td><code>/api/tickets/send</code></td><td>Resend ticket email</td></tr>
+    <tr><td>GET</td><td><code>/api/config/app</code></td><td>Client IDs, Maps key, Paystack public key</td></tr>
+  </table>
+
+  <h3>C. Reminder jobs</h3>
+  <p>Pages ping <code>/api/cron/run-reminders.php</code>, which self-throttles to one run every two minutes and fans out to <code>cron/notify-pre-event.php</code>: T-30 minutes (admin and organizer in-app, attendee email/SMS), T-5 minutes (admin and organizer), plus auto-publishing of scheduled drafts.</p>
+</section>
+
+</body>
+</html>
