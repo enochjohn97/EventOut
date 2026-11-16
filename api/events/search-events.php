@@ -55,6 +55,12 @@ try {
     $where_clauses = ["e.deleted_at IS NULL"];
     $params = [];
 
+    // Passed (archived) events stay out of the user-facing feed/search. The
+    // count query shares these clauses, so `total` and paging stay exact.
+    if ($user_role !== 'admin' && $user_role !== 'client') {
+        $where_clauses[] = "(e.event_date IS NULL OR e.event_date >= CURDATE())";
+    }
+
     // Role-based filtering
     if ($user_role === 'client') {
         // Clients only see their own events (drafts, published, etc.)
@@ -186,7 +192,6 @@ try {
         ELSE ''
     END";
 
-    // Pagination support (offset) so paged mobile search works.
     $offset = max(0, (int) ($_GET['offset'] ?? 0));
 
     $count_stmt = $pdo->prepare("
@@ -219,8 +224,7 @@ try {
         FROM events e
         LEFT JOIN clients c ON e.client_id = c.id
         WHERE $where_sql
-        ORDER BY CASE WHEN e.event_date < CURDATE() THEN 1 ELSE 0 END ASC,
-                 $sort_order_sql, e.id DESC
+        ORDER BY $sort_order_sql, e.id DESC
         LIMIT ? OFFSET ?
     ";
 

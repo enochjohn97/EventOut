@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../core/network/endpoint_resolver.dart';
+import '../../core/utils/load_timings.dart';
 import '../models/event_model.dart';
 import '../services/event_cache_service.dart';
 import '../services/user_event_service.dart';
@@ -95,6 +96,7 @@ class EventsProvider extends ChangeNotifier {
             ..clear()
             ..addAll(cached);
           isRefreshing = true;
+          LoadTimings.markOnce('feed_cache_paint');
           notifyListeners();
         }
       }
@@ -114,25 +116,33 @@ class EventsProvider extends ChangeNotifier {
         // cannot pin the grid on its skeleton — the timeout surfaces as a
         // failure and the loop retries instead of waiting minutes. Kept short
         // so a slow first paint falls through to the retry quickly.
-        final result = await UserEventService.fetchEvents(
-          page: _page,
-          limit: pageSize,
-          search: filters.search.trim().isEmpty ? null : filters.search.trim(),
-          sort: filters.sort,
-          category: filters.category,
-          state: filters.state,
-          priority: filters.priority,
-          freeOnly: filters.freeOnly,
-          priceMin: filters.priceMin,
-          priceMax: filters.priceMax,
-        ).timeout(const Duration(seconds: 15));
+        final result = await LoadTimings.measure(
+          'feed_request_p$_page',
+          () => UserEventService.fetchEvents(
+            page: _page,
+            limit: pageSize,
+            search: filters.search.trim().isEmpty
+                ? null
+                : filters.search.trim(),
+            sort: filters.sort,
+            category: filters.category,
+            state: filters.state,
+            priority: filters.priority,
+            freeOnly: filters.freeOnly,
+            priceMin: filters.priceMin,
+            priceMax: filters.priceMax,
+          ).timeout(const Duration(seconds: 15)),
+        );
         // A newer request (keystroke / page change) won the race — drop this one.
         if (requestId != _requestId) return;
 
         events
           ..clear()
           ..addAll(result.events);
+        LoadTimings.markOnce('first_feed_paint', budgeted: true);
         isRefreshing = false;
+        // The API already excludes passed (archived) events, so its total is
+        // the visible total — no client-side adjustment needed.
         _total = result.total;
         _page = _page.clamp(1, totalPages);
         error = null;

@@ -47,6 +47,24 @@ class TicketModel {
     this.organizerName,
   });
 
+  /// True when the event this ticket belongs to already took place. Archiving
+  /// is date-based on the server (event_date < today), so a passed event is
+  /// also an archived one — and its ticket can no longer admit entry.
+  bool get isEventPassed {
+    final raw = eventDate;
+    if (raw == null || raw.trim().isEmpty) return false;
+    final day = raw.trim().split(RegExp(r'[ T]')).first;
+    final parsed = DateTime.tryParse(day);
+    if (parsed == null) return false;
+    final now = DateTime.now();
+    return DateTime(parsed.year, parsed.month, parsed.day)
+        .isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  /// Status the app shows: a passed/archived event makes its ticket invalid
+  /// even while the ticket row itself is still marked valid.
+  String get effectiveStatus => isEventPassed ? 'invalid' : status;
+
   factory TicketModel.fromJson(Map<String, dynamic> json, {String? baseOrigin}) {
     double toDouble(dynamic v) {
       if (v == null) return 0;

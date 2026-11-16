@@ -24,7 +24,7 @@ class ApiClient {
   // Retry delays for transient server errors (e.g. brief HTML responses from
   // anti-bot layer) — also gives the challenge solver up to 4 fresh attempts,
   // which matters on flaky mobile connections that truncate the challenge HTML.
-  static const _retryDelays = [2, 3, 5];
+  static const _retryDelays = [1, 2];
 
   /// Start on the Android emulator's host loopback until local discovery
   /// selects the running PHP server.

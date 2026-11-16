@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/utils/event_utils.dart';
 import '../models/event_model.dart';
 
 /// Persistent cache of the events feed for an instant, offline-friendly start.
@@ -118,6 +119,9 @@ class EventCacheService {
       // their image URLs for the current environment instead of keeping the
       // origin they were cached from.
       final origin = ApiClient().baseOrigin;
+      // A page cached before midnight can contain events that have since
+      // passed. Drop those rows at the cache boundary so the preview never
+      // flashes a finished event; the API is still the authority for paging.
       return rows
           .map(
             (row) => EventModel.fromJson(
@@ -125,6 +129,7 @@ class EventCacheService {
               baseOrigin: origin,
             ),
           )
+          .where((event) => !EventUtils.isPastDay(event.eventDate))
           .toList();
     } catch (_) {
       return null;

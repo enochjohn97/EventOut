@@ -42,7 +42,8 @@ class UserEventService {
     final savedUser = await SecureStorage.getUser();
     final userState = savedUser?['state']?.toString().trim() ?? '';
     final params = <String, dynamic>{
-      'page': page,
+      // Single paging contract: the API pages by offset.
+      'offset': (page - 1) * limit,
       'limit': limit,
       if (sort != null && sort.isNotEmpty) 'sort': sort,
       // `search` is what makes the router use the search handler; the filter

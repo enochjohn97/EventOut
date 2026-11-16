@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/network/api_client.dart';
 import 'core/network/endpoint_resolver.dart';
+import 'core/utils/load_timings.dart';
 import 'users/providers/app_config_provider.dart';
 import 'users/providers/auth_provider.dart';
 import 'users/providers/events_provider.dart';
@@ -191,6 +192,7 @@ class PushNotifications {
 }
 
 void main() {
+  LoadTimings.launch();
   WidgetsFlutterBinding.ensureInitialized();
 
   ApiClient();
@@ -225,6 +227,9 @@ class _EventraUserAppState extends State<EventraUserApp> {
     _router = createUserRouter(_authProvider);
     _configProvider = AppConfigProvider();
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LoadTimings.markOnce('first_frame');
+    });
     _initializeAuthAndConfig();
   }
 
@@ -240,12 +245,14 @@ class _EventraUserAppState extends State<EventraUserApp> {
     try {
       await endpointReady.timeout(const Duration(seconds: 20));
     } catch (_) {}
+    LoadTimings.mark('endpoint_ready');
     try {
       await googleReady;
     } catch (_) {}
     try {
       await configReady;
     } catch (_) {}
+    LoadTimings.mark('config_ready');
     // Start push after the API origin is resolved so the token upload (and any
     // later publish push) targets the right host. Never blocks app startup.
     try {

@@ -366,12 +366,12 @@ if (strpos($uri, '/api/') === 0) {
             $dispatchApi('favorites/get-favorites.php');
         }
 
-        $page = max(1, (int)($_GET['page'] ?? 1));
+        // Paging is the handlers' contract: they page by `offset`. The router
+        // only normalises the page size and never rewrites the offset.
         $limit = (int)($_GET['limit'] ?? 10);
         if ($limit <= 0) {
             $limit = 10;
         }
-        $_GET['offset'] = ($page - 1) * $limit;
         $_GET['limit'] = $limit;
         if (!empty($_GET['sort'])) {
             $sortMap = [

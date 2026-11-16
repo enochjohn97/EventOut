@@ -41,6 +41,7 @@ try {
         SELECT COUNT(*) FROM favorites f
         JOIN events e ON f.event_id = e.id
         WHERE f.user_id = ? AND e.deleted_at IS NULL AND e.status = \'published\'
+          AND (e.event_date IS NULL OR e.event_date >= CURDATE())
     ');
     $countStmt->execute([$user_id]);
     $total = (int)$countStmt->fetchColumn();
@@ -58,6 +59,7 @@ try {
         WHERE f.user_id = ?
           AND e.deleted_at IS NULL
           AND e.status = 'published'
+          AND (e.event_date IS NULL OR e.event_date >= CURDATE())
         ORDER BY f.created_at DESC
         LIMIT ? OFFSET ?
     ");

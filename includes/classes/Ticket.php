@@ -10,6 +10,30 @@ require_once __DIR__ . '/../../config/app.php';
 class Ticket
 {
     /**
+     * True when the event behind a ticket can no longer admit entry: it has
+     * already taken place (archiving is date-based — event_date before today),
+     * was explicitly archived (events.status/admin_status), or the event row
+     * has been soft-deleted.
+     */
+    public static function eventIsOver(?string $eventDate, ?string $deletedAt = null, bool $archived = false): bool
+    {
+        if ($archived) {
+            return true;
+        }
+        if ($deletedAt !== null && $deletedAt !== '' && !str_starts_with((string)$deletedAt, '0000-00-00')) {
+            return true;
+        }
+        if ($eventDate === null || $eventDate === '') {
+            return false;
+        }
+        $day = strtotime(substr((string)$eventDate, 0, 10));
+        if ($day === false) {
+            return false;
+        }
+        return $day < strtotime(date('Y-m-d'));
+    }
+
+    /**
      * Validate a ticket and mark it as used (atomic, locked transaction).
      *
      * @param PDO    $pdo
@@ -42,6 +66,8 @@ class Ticket
                        e.event_date,
                        e.id      AS event_id,
                        e.client_id,
+                       e.deleted_at,
+                       IF(e.status = 'archived' OR e.admin_status = 'archived', 1, 0) AS event_archived,
                        c.business_name AS client_name,
                        u.name AS buyer_name,
                        a.email AS buyer_email
@@ -70,13 +96,14 @@ class Ticket
                 return ['success' => false, 'message' => 'Payment for this ticket has not been confirmed.'];
             }
 
-            // Check: event must not have expired
-            if (!empty($ticket['event_date']) && strtotime($ticket['event_date']) < strtotime(date('Y-m-d'))) {
+            // Check: the event must not have passed (archived) or been deleted
+            if (self::eventIsOver($ticket['event_date'] ?? null, $ticket['deleted_at'] ?? null, (bool)($ticket['event_archived'] ?? false))) {
                 $pdo->rollBack();
                 return [
                     'success' => false,
                     'message' => "This event ({$ticket['event_name']}) has already passed. Ticket is no longer valid.",
-                    'status'  => 'expired'
+                    'status'  => 'expired',
+                    'event_passed' => true,
                 ];
             }
 
@@ -204,6 +231,8 @@ class Ticket
                    e.image_path    AS event_image,
                    e.event_date,
                    e.event_time,
+                   e.deleted_at,
+                   IF(e.status = 'archived' OR e.admin_status = 'archived', 1, 0) AS event_archived,
                    e.price         AS event_base_price,
                    e.metadata      AS event_metadata
             FROM tickets t
@@ -221,6 +250,10 @@ class Ticket
         if ($t['payment_status'] !== 'paid') {
             return ['success' => false, 'message' => 'Payment for this ticket has not been confirmed. Ticket is not valid.'];
         }
+
+        // Passed (archived) or deleted events void their tickets: the proof must
+        // report invalid even while the ticket row itself still says valid.
+        $eventPassed = self::eventIsOver($t['event_date'] ?? null, $t['deleted_at'] ?? null, (bool)($t['event_archived'] ?? false));
 
         // Resolve the effective ticket price from tier metadata (falls back
         // to legacy event price) — identical logic to the web display.
@@ -268,7 +301,10 @@ class Ticket
                 'event_date' => $t['event_date'],
                 'event_time' => $t['event_time'] ? substr((string)$t['event_time'], 0, 5) : null,
                 'event_custom_id' => $t['event_custom_id'],
-                'ticket_status' => $t['used'] == 1 ? 'Used' : ($t['ticket_status'] === 'cancelled' ? 'Cancelled' : 'Valid'),
+                'ticket_status' => $eventPassed
+                    ? 'Invalid'
+                    : ($t['used'] == 1 ? 'Used' : ($t['ticket_status'] === 'cancelled' ? 'Cancelled' : 'Valid')),
+                'event_passed' => $eventPassed,
             ],
         ];
     }

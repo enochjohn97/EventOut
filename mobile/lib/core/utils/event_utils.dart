@@ -234,17 +234,22 @@ class EventUtils {
     return modes.length > 1 && !modes.contains('all');
   }
 
+  /// True when [dateStr] names a calendar day before today. A passed event is
+  /// also an archived one (the server's Archive view is `event_date < today`),
+  /// so its tickets can no longer admit entry.
+  static bool isPastDay(String? dateStr) {
+    if (dateStr == null || dateStr.trim().isEmpty) return false;
+    final raw = dateStr.trim().split(RegExp(r'[ T]')).first;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return false;
+    final today = DateTime.now();
+    return DateTime(parsed.year, parsed.month, parsed.day)
+        .isBefore(DateTime(today.year, today.month, today.day));
+  }
+
   /// Upcoming / Sold Out / Passed — same rules as the web cards.
   static ({String label, int colorValue}) statusBadge(EventModel event) {
-    final today = DateTime.now();
-    final todayMid = DateTime(today.year, today.month, today.day);
-    DateTime? evDay;
-    if (event.eventDate != null && event.eventDate!.isNotEmpty) {
-      try {
-        evDay = DateTime.parse(event.eventDate!.split(' ').first);
-      } catch (_) {}
-    }
-    if (evDay != null && evDay.isBefore(todayMid)) {
+    if (isPastDay(event.eventDate)) {
       return (label: 'Passed', colorValue: 0xFF6B7280);
     }
     if (event.isSoldOut) {

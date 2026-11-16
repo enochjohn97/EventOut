@@ -70,13 +70,33 @@ try {
             }
         } catch (\Throwable $colEx) {}
 
-        $stmt = $pdo->prepare("SELECT t.* FROM tickets t WHERE t.barcode = ? LIMIT 1");
+        $stmt = $pdo->prepare("
+            SELECT t.*, e.event_date, e.deleted_at,
+                   IF(e.status = 'archived' OR e.admin_status = 'archived', 1, 0) AS event_archived
+            FROM tickets t
+            JOIN events e ON t.event_id = e.id
+            WHERE t.barcode = ?
+            LIMIT 1
+        ");
         $stmt->execute([$barcode]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
             http_response_code(422);
             echo json_encode(['success' => false, 'message' => 'Ticket not found.']);
+            exit;
+        }
+
+        // Passed (archived) or deleted events void the ticket. Reject before
+        // counting a scan — a dead ticket must not burn the QR allowance.
+        if (Ticket::eventIsOver($row['event_date'] ?? null, $row['deleted_at'] ?? null, (bool)($row['event_archived'] ?? false))) {
+            http_response_code(422);
+            echo json_encode([
+                'success' => false,
+                'status' => 'invalid',
+                'event_passed' => true,
+                'message' => 'This event has already passed (archived). The ticket is no longer valid.',
+            ]);
             exit;
         }
 

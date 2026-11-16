@@ -50,9 +50,11 @@ try {
     }
 
     $stmt = $pdo->prepare("
-        SELECT t.*, p.status AS payment_status
+        SELECT t.*, p.status AS payment_status, e.event_date, e.deleted_at,
+               IF(e.status = 'archived' OR e.admin_status = 'archived', 1, 0) AS event_archived
         FROM tickets t
         JOIN payments p ON t.payment_id = p.id
+        JOIN events e ON t.event_id = e.id
         WHERE t.barcode = ? OR (t.custom_id IS NOT NULL AND t.custom_id = ?)
         LIMIT 1
     ");
@@ -67,6 +69,20 @@ try {
     if ($t['payment_status'] !== 'paid') {
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'Payment for this ticket is not confirmed.']);
+        exit;
+    }
+
+    // A passed (archived) or deleted event can no longer issue a scannable QR.
+    if (Ticket::eventIsOver($t['event_date'] ?? null, $t['deleted_at'] ?? null, (bool)($t['event_archived'] ?? false))) {
+        http_response_code(422);
+        echo json_encode([
+            'success' => false,
+            'status' => 'invalid',
+            'event_passed' => true,
+            'message' => 'This event has already passed (archived). The QR code is no longer valid.',
+            'scan_limit' => QR_SCAN_LIMIT,
+            'scans_used' => 0,
+        ]);
         exit;
     }
 

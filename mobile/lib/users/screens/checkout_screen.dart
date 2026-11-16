@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/event_utils.dart';
+import '../../core/utils/load_timings.dart';
 import '../../core/widgets/brand_logo.dart';
 import '../models/event_model.dart';
 import '../models/user_model.dart';
@@ -180,19 +181,26 @@ class _CheckoutScreenState extends State<CheckoutScreen>
 
     setState(() => _processing = true);
     try {
-      final initResult = await UserPaymentService.initializePayment(
-        eventId: widget.event.id,
-        quantity: _quantity,
-        ticketType: _ticketType,
-        contactInfo: {
-          'fname': _fnameCtrl.text.trim(),
-          'lname': _lnameCtrl.text.trim(),
-          'email': _emailCtrl.text.trim(),
-          'phone': _phoneCtrl.text.trim(),
-        },
-        giftRecipientEmail: _giftRecipientEmail,
-        giftRecipientName: widget.giftMode ? _giftNameCtrl.text.trim() : null,
-        giftRecipientPhone: widget.giftMode ? _giftPhoneCtrl.text.trim() : null,
+      final initResult = await LoadTimings.measure(
+        'payment_initialize',
+        () => UserPaymentService.initializePayment(
+          eventId: widget.event.id,
+          quantity: _quantity,
+          ticketType: _ticketType,
+          contactInfo: {
+            'fname': _fnameCtrl.text.trim(),
+            'lname': _lnameCtrl.text.trim(),
+            'email': _emailCtrl.text.trim(),
+            'phone': _phoneCtrl.text.trim(),
+          },
+          giftRecipientEmail: _giftRecipientEmail,
+          giftRecipientName: widget.giftMode
+              ? _giftNameCtrl.text.trim()
+              : null,
+          giftRecipientPhone: widget.giftMode
+              ? _giftPhoneCtrl.text.trim()
+              : null,
+        ),
       );
 
       final reference = initResult.reference;
@@ -267,12 +275,16 @@ class _CheckoutScreenState extends State<CheckoutScreen>
   ///  * failure    — Paystack says failed, or verify couldn't run
   Future<_PaymentCheck> _verifyWithRetry(String reference) async {
     if (reference.isEmpty) return const _PaymentCheck(_PaymentOutcome.failure);
-    // Webhook is normally near-instant; keep polling up to ~15s.
-    const attempts = 6;
-    const delay = Duration(seconds: 2);
+    // Webhook is normally near-instant: poll fast (0.7s) so a successful
+    // payment confirms in well under two seconds, with a bounded ~6s ceiling.
+    const attempts = 9;
+    const delay = Duration(milliseconds: 700);
     for (var i = 0; i < attempts; i++) {
       try {
-        final data = await UserPaymentService.verifyPayment(reference);
+        final data = await LoadTimings.measure(
+          'payment_verify',
+          () => UserPaymentService.verifyPayment(reference),
+        );
         final status = data['status']?.toString();
         if (status == 'success') return _PaymentCheck(_PaymentOutcome.success, data);
         if (status == 'processing') {

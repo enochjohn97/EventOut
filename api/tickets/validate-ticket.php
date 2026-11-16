@@ -7,6 +7,7 @@
 
 require_once '../../server/config.php';
 require_once '../../config/database.php';
+require_once '../../includes/classes/Ticket.php';
 
 $barcode = $_GET['barcode'] ?? null;
 
@@ -18,7 +19,9 @@ if (!$barcode) {
 
 try {
     $stmt = $pdo->prepare("
-        SELECT t.*, e.event_name, e.event_date, e.event_time, e.location, e.address, 
+        SELECT t.*, e.event_name, e.event_date, e.deleted_at,
+               IF(e.status = 'archived' OR e.admin_status = 'archived', 1, 0) AS event_archived,
+               e.event_time, e.location, e.address,
                u.name as user_name, p.status as payment_status, p.amount, p.quantity, p.ticket_type
         FROM tickets t
         JOIN events e ON t.event_id = e.id
@@ -35,12 +38,25 @@ try {
         exit;
     }
 
+    // Passed (archived) or deleted events void the ticket — this public proof
+    // page must say so instead of "verified and valid".
+    $eventPassed = Ticket::eventIsOver(
+        $ticket['event_date'] ?? null,
+        $ticket['deleted_at'] ?? null,
+        (bool)($ticket['event_archived'] ?? false)
+    );
+
     // If request wants JSON (e.g. from an app), return JSON
     if (strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false) {
         header('Content-Type: application/json');
         echo json_encode([
-            'success' => true,
-            'status' => $ticket['status'],
+            'success' => !$eventPassed,
+            'valid' => !$eventPassed,
+            'status' => $eventPassed ? 'invalid' : $ticket['status'],
+            'event_passed' => $eventPassed,
+            'message' => $eventPassed
+                ? 'This event has passed (archived). The ticket is no longer valid.'
+                : 'Ticket is valid.',
             'event_name' => $ticket['event_name'],
             'user_name' => $ticket['user_name'],
             'barcode' => $barcode,
@@ -118,6 +134,10 @@ try {
                 position: relative;
                 z-index: 2;
             }
+            .status-icon.invalid {
+                background: linear-gradient(135deg, #ef4444, #b91c1c);
+                box-shadow: 0 10px 25px rgba(239, 68, 68, 0.4);
+            }
             .pulse-ring {
                 position: absolute;
                 inset: -15px;
@@ -126,6 +146,7 @@ try {
                 animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
                 z-index: 1;
             }
+            .pulse-ring.invalid { background: rgba(239, 68, 68, 0.2); }
             @keyframes popIn {
                 0% { transform: scale(0.5); opacity: 0; }
                 100% { transform: scale(1); opacity: 1; }
@@ -174,16 +195,23 @@ try {
                 color: #34d399;
                 border: 1px solid rgba(52, 211, 153, 0.3);
             }
+            .badge.invalid {
+                background: rgba(239, 68, 68, 0.15);
+                color: #f87171;
+                border-color: rgba(248, 113, 113, 0.3);
+            }
         </style>
     </head>
     <body>
         <div class="proof-card">
             <div class="status-icon-wrapper">
-                <div class="pulse-ring"></div>
-                <div class="status-icon">✓</div>
+                <div class="pulse-ring<?php echo $eventPassed ? ' invalid' : ''; ?>"></div>
+                <div class="status-icon<?php echo $eventPassed ? ' invalid' : ''; ?>"><?php echo $eventPassed ? '✕' : '✓'; ?></div>
             </div>
-            <h1>Proof of Purchase</h1>
-            <p>This ticket is verified and valid.</p>
+            <h1><?php echo $eventPassed ? 'Ticket No Longer Valid' : 'Proof of Purchase'; ?></h1>
+            <p><?php echo $eventPassed
+                ? 'This event has passed (archived). This ticket is no longer valid for entry.'
+                : 'This ticket is verified and valid.'; ?></p>
             
             <div class="detail-box">
                 <div class="detail-item">
@@ -212,9 +240,14 @@ try {
                 </div>
                 <div class="detail-item" style="padding-top: 4px;">
                     <span class="label">Status</span>
-                    <span class="badge">
+                    <span class="badge<?php echo $eventPassed ? ' invalid' : ''; ?>">
+                        <?php if ($eventPassed): ?>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        Invalid
+                        <?php else: ?>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                         Confirmed
+                        <?php endif; ?>
                     </span>
                 </div>
             </div>

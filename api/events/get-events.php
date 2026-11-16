@@ -40,7 +40,8 @@ try {
     $client_id = $_GET['client_id'] ?? null;
     $status    = $_GET['status']    ?? null;
     $limit     = ($_GET['limit'] ?? '') === 'all' ? 10000 : (int)($_GET['limit'] ?? 10);
-    $offset    = (int)($_GET['offset'] ?? 0);
+    if ($limit <= 0) $limit = 10;
+    $offset    = max(0, (int) ($_GET['offset'] ?? 0));
     $user_role = $_SESSION['user_role'] ?? 'guest';
 
     $user_state = trim($_GET['user_state'] ?? '');
@@ -131,7 +132,8 @@ try {
             LEFT JOIN clients u ON e.client_id = u.id
             WHERE e.deleted_at IS NULL
               AND IFNULL(e.event_visibility, 'public') <> 'private'
-              AND e.status = 'published'";
+              AND e.status = 'published'
+              AND (e.event_date IS NULL OR e.event_date >= CURDATE())";
 
         $ticketFilter = "AND (e.ticket_count > 0 OR e.ticket_count IS NULL)";
 
@@ -294,6 +296,13 @@ try {
 
     // Exclude soft-deleted
     $where_clauses[] = "e.deleted_at IS NULL";
+
+    // Passed (archived) events never reach the user-facing feed. The count
+    // below runs on these same clauses, so `total` and pagination stay exact.
+    if ($user_role !== 'admin' && !$is_dashboard) {
+        $where_clauses[] = "(e.event_date IS NULL OR e.event_date >= CURDATE())";
+    }
+
     $where_sql       = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
 
     // Count
@@ -329,7 +338,7 @@ try {
         'price_high' => "$effectivePrice DESC",
         default      => "e.created_at DESC",
     };
-    $order_sql = "CASE WHEN e.event_date < CURDATE() THEN 1 ELSE 0 END ASC, $sort_order_sql, e.id DESC";
+    $order_sql = "$sort_order_sql, e.id DESC";
 
     $sql = "SELECT
             e.*,

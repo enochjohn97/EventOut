@@ -211,8 +211,22 @@ class _TicketsScreenState extends State<TicketsScreen> {
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
-                                        StatusChip(ticket.status),
-                                        if (ticket.paymentStatus == 'paid') ...[
+                                        StatusChip(
+                                          ticket.effectiveStatus,
+                                          color:
+                                              ticket.effectiveStatus ==
+                                                  'invalid'
+                                              ? AppTheme.error
+                                              : null,
+                                        ),
+                                        if (ticket.isEventPassed) ...[
+                                          const SizedBox(width: 8),
+                                          const StatusChip(
+                                            'Passed',
+                                            color: Color(0xFF6B7280),
+                                          ),
+                                        ] else if (ticket.paymentStatus ==
+                                            'paid') ...[
                                           const SizedBox(width: 8),
                                           const StatusChip(
                                             'Email sent',
@@ -293,9 +307,9 @@ Future<void> copyTicketId(BuildContext context, String ticketId) async {
     );
 }
 
-/// Sizable, scrollable ticket-check modal: QR preview for the entered ticket ID
-/// plus unlimited verification by ID — the mobile mirror of the website's
-/// "Check Ticket" component.
+/// Scrollable ticket-check modal: unlimited verification by ticket ID — the
+/// mobile mirror of the website's "Check Ticket" component. The QR renders
+/// only for a verified ticket whose event has not passed.
 Future<void> showCheckTicketDialog(
   BuildContext context, {
   String initialTicketId = '',
@@ -321,28 +335,18 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
   Map<String, dynamic>? _proof;
   String? _error;
   bool _verifying = false;
-  String? _qrTicketId;
 
   @override
   void initState() {
     super.initState();
     _idCtrl = TextEditingController(text: widget.initialTicketId);
-    if (widget.initialTicketId.trim().isNotEmpty) {
-      _qrTicketId = widget.initialTicketId.trim();
-      _verify();
-    }
+    if (widget.initialTicketId.trim().isNotEmpty) _verify();
   }
 
   @override
   void dispose() {
     _idCtrl.dispose();
     super.dispose();
-  }
-
-  void _loadQr(String ticketId) {
-    final id = ticketId.trim();
-    if (_qrTicketId == id) return;
-    setState(() => _qrTicketId = id.length >= 4 ? id : null);
   }
 
   Future<void> _verify() async {
@@ -422,9 +426,7 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
-                child: _proof != null
-                    ? _proofView(_proof!, verifiedBy: 'id')
-                    : _formView(),
+                child: _proof != null ? _proofView(_proof!) : _formView(),
               ),
             ),
           ],
@@ -437,53 +439,6 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Ticket QR code',
-          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          'Generated from the ticket ID — scannable by any phone.',
-          style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            children: [
-              if (_qrTicketId != null)
-                _qrPreview()
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.qr_code_2,
-                        size: 40,
-                        color: AppTheme.textMuted,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Enter a ticket ID below — the QR code appears here.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: AppTheme.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
         const Text(
           'Verify by ticket ID',
           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
@@ -498,7 +453,6 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
           controller: _idCtrl,
           textCapitalization: TextCapitalization.characters,
           onSubmitted: (_) => _verify(),
-          onChanged: _loadQr,
           decoration: const InputDecoration(
             hintText: 'e.g. TKT-20260929-0697',
             prefixIcon: Icon(Icons.confirmation_number_outlined),
@@ -544,44 +498,51 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
     );
   }
 
-  Widget _qrPreview() {
-    return QrImageView(
-      data: _qrTicketId!,
-      version: QrVersions.auto,
-      size: 190,
-      backgroundColor: Colors.white,
-    );
-  }
-
-  Widget _proofView(Map<String, dynamic> proof, {required String verifiedBy}) {
+  Widget _proofView(Map<String, dynamic> proof) {
     final image = proof['event_image']?.toString() ?? '';
     final status = proof['ticket_status']?.toString() ?? 'Valid';
-    final statusColor = status.toLowerCase() == 'valid'
-        ? AppTheme.success
-        : (status.toLowerCase() == 'used'
-              ? const Color(0xFFD97706)
-              : AppTheme.error);
+    final ticketId = proof['ticket_id']?.toString() ?? '';
+    // Passed/archived events void their tickets (and their QR) regardless of
+    // the stored ticket row's status.
+    final eventPassed = EventUtils.isPastDay(proof['event_date']?.toString());
+    final statusColor = eventPassed
+        ? AppTheme.error
+        : (status.toLowerCase() == 'valid'
+              ? AppTheme.success
+              : (status.toLowerCase() == 'used'
+                    ? const Color(0xFFD97706)
+                    : AppTheme.error));
+    final bannerColor = eventPassed ? AppTheme.error : AppTheme.success;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: AppTheme.success.withValues(alpha: 0.08),
+            color: bannerColor.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.verified, size: 18, color: AppTheme.success),
-              SizedBox(width: 6),
-              Text(
-                'Ticket verified successfully',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.success,
+              Icon(
+                eventPassed ? Icons.block : Icons.verified,
+                size: 18,
+                color: bannerColor,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  eventPassed
+                      ? 'Event passed — this ticket is no longer valid'
+                      : 'Ticket verified successfully',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: bannerColor,
+                  ),
                 ),
               ),
             ],
@@ -628,13 +589,27 @@ class _CheckTicketDialogState extends State<_CheckTicketDialog> {
                 proof['price_display'].toString(),
                 color: AppTheme.accent,
               ),
-            StatusChip(status, color: statusColor),
-            StatusChip(
-              verifiedBy == 'id' ? 'Verified by Ticket ID' : 'Verified by QR',
-              color: AppTheme.success,
-            ),
+            StatusChip(eventPassed ? 'Invalid' : status, color: statusColor),
+            if (eventPassed)
+              const StatusChip('Passed', color: Color(0xFF6B7280)),
+            if (!eventPassed)
+              const StatusChip(
+                'Verified by Ticket ID',
+                color: AppTheme.success,
+              ),
           ],
         ),
+        if (!eventPassed && ticketId.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Center(
+            child: QrImageView(
+              data: ticketId,
+              version: QrVersions.auto,
+              size: 190,
+              backgroundColor: Colors.white,
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         _proofRow(
           'Payment / transaction date',
