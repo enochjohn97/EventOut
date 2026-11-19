@@ -56,6 +56,11 @@ class AppTheme {
   static const Color textMuted = Color(0xFF6B7280);
   static const Color bgPage = Color(0xFFF9F8F5);
   static const Color bgCard = Colors.white;
+
+  /// Login / auth screens use the brand cream instead of the page off-white.
+  static const Color cream = Color(0xFFF5F5DC);
+  static const Color creamDeep = Color(0xFFEDE9D2);
+  static const Color brandRed = Color(0xFF991B1B);
   static const Color error = Color(0xFFEF4444);
   static const Color success = Color(0xFF1B5E20);
 

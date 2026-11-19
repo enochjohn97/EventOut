@@ -10,6 +10,12 @@ class SecureStorage {
   static const _keyUser = 'auth_user';
   static const _keyRefreshToken = 'refresh_token';
 
+  // Client (organizer) portal session — kept in separate keys so an attendee
+  // Google session and a client email/password session can coexist on one
+  // device without overwriting each other's token.
+  static const _keyClientToken = 'client_auth_token';
+  static const _keyClientUser = 'client_auth_user';
+
   /// Save the session token. Tokens are sensitive credentials and must never
   /// be persisted as plaintext outside the encrypted platform keystore.
   static Future<void> saveToken(String token) async {
@@ -43,6 +49,7 @@ class SecureStorage {
   static bool _allowedUserField(String key) {
     const allowed = <String>{
       'id',
+      'profile_id',
       'name',
       'email',
       'phone',
@@ -123,9 +130,48 @@ class SecureStorage {
 
   /// Wipe session material (token, user, refresh token). Used on logout or
   /// when a token is rejected so a dead credential cannot linger in secure
-  /// storage.
+  /// storage. Client-portal credentials use their own keys and are cleared by
+  /// [clearClientSession] so an attendee session expiring never signs an
+  /// organizer out (and vice versa).
   static Future<void> clearAll() async {
-    await _storage.deleteAll();
+    await _storage.delete(key: _keyToken);
+    await _storage.delete(key: _keyUser);
+    await _storage.delete(key: _keyRefreshToken);
+  }
+
+  static Future<void> saveClientToken(String token) async {
+    await _storage.write(key: _keyClientToken, value: token);
+  }
+
+  static Future<String?> getClientToken() async {
+    return _storage.read(key: _keyClientToken);
+  }
+
+  static Future<void> saveClientUser(Map<String, dynamic> user) async {
+    final safe = Map<String, dynamic>.fromEntries(
+      user.entries.where((entry) => _allowedUserField(entry.key) ||
+          entry.key == 'business_name' ||
+          entry.key == 'job_title' ||
+          entry.key == 'company' ||
+          entry.key == 'verification_status'),
+    );
+    safe['profile_id'] = user['profile_id'];
+    await _storage.write(key: _keyClientUser, value: jsonEncode(safe));
+  }
+
+  static Future<Map<String, dynamic>?> getClientUser() async {
+    final raw = await _storage.read(key: _keyClientUser);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> clearClientSession() async {
+    await _storage.delete(key: _keyClientToken);
+    await _storage.delete(key: _keyClientUser);
   }
 
   /// Read or write arbitrary sensitive app state under a namespaced key.

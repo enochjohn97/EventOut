@@ -149,7 +149,7 @@ class UserPaymentService {
     final map = raw is Map ? raw : const {};
     return GiftStoreLinks(
       android: map['android']?.toString() ??
-          'https://play.google.com/store/apps/details?id=com.example.eventra_mobile',
+          'https://play.google.com/store/apps/details?id=com.eventout_mobile',
       ios: map['ios']?.toString() ?? 'https://apps.apple.com/search?term=EventOut',
     );
   }

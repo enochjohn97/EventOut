@@ -111,7 +111,7 @@ function validateBearerToken($requiredRole = null)
             WHERE at.token = ? 
                 AND at.type = 'access' 
                 AND at.expires_at > NOW() 
-                AND at.revoked = 0
+                AND COALESCE(at.revoked, 0) = 0
             LIMIT 1
         ");
         $stmt->execute([$token]);

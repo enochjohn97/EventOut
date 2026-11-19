@@ -7,6 +7,8 @@ import 'core/theme/app_theme.dart';
 import 'core/network/api_client.dart';
 import 'core/network/endpoint_resolver.dart';
 import 'core/utils/load_timings.dart';
+import 'clients/providers/client_auth_provider.dart';
+import 'clients/providers/client_data_provider.dart';
 import 'users/providers/app_config_provider.dart';
 import 'users/providers/auth_provider.dart';
 import 'users/providers/events_provider.dart';
@@ -217,6 +219,7 @@ class EventraUserApp extends StatefulWidget {
 
 class _EventraUserAppState extends State<EventraUserApp> {
   late final AuthProvider _authProvider;
+  late final ClientAuthProvider _clientAuthProvider;
   late final GoRouter _router;
   late final AppConfigProvider _configProvider;
 
@@ -224,7 +227,11 @@ class _EventraUserAppState extends State<EventraUserApp> {
   void initState() {
     super.initState();
     _authProvider = AuthProvider();
-    _router = createUserRouter(_authProvider);
+    _clientAuthProvider = ClientAuthProvider();
+    _router = createUserRouter(
+      _authProvider,
+      clientAuthProvider: _clientAuthProvider,
+    );
     _configProvider = AppConfigProvider();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -253,6 +260,9 @@ class _EventraUserAppState extends State<EventraUserApp> {
       await configReady;
     } catch (_) {}
     LoadTimings.mark('config_ready');
+    // Restore an organizer session in the background, now that the API origin
+    // is settled — the attendee login screen has already painted either way.
+    unawaited(_clientAuthProvider.bootstrap().catchError((_) {}));
     // Start push after the API origin is resolved so the token upload (and any
     // later publish push) targets the right host. Never blocks app startup.
     try {
@@ -266,6 +276,8 @@ class _EventraUserAppState extends State<EventraUserApp> {
       providers: [
         ChangeNotifierProvider.value(value: _configProvider),
         ChangeNotifierProvider.value(value: _authProvider),
+        ChangeNotifierProvider.value(value: _clientAuthProvider),
+        ChangeNotifierProvider(create: (_) => ClientDataProvider()),
         ChangeNotifierProvider(create: (_) => EventsProvider()),
         ChangeNotifierProvider(create: (_) => FavoritesProvider()),
         ChangeNotifierProvider(create: (_) => TicketsProvider()),

@@ -261,10 +261,7 @@ CREATE TABLE events (
     event_date                  DATE DEFAULT NULL,
     event_time                  TIME DEFAULT NULL,
     scheduled_publish_time      DATETIME DEFAULT NULL,
-    scheduled_notification_at   DATETIME DEFAULT NULL,
-    scheduling_reminder_sent    TINYINT(1) DEFAULT 0,
     user_reminder_sent          TINYINT(1) DEFAULT 0,
-    notification_sent           TINYINT(1) DEFAULT 0,
     
     -- Pricing & Ticketing
     price                       DECIMAL(12, 2) DEFAULT 0.00,

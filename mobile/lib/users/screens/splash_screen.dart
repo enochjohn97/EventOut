@@ -255,9 +255,15 @@ class _SplashScreenState extends State<SplashScreen>
     final isBusy = auth.isLoading || _isSigningIn;
 
     return Scaffold(
-      backgroundColor: AppTheme.bgPage,
+      backgroundColor: AppTheme.cream,
       body: Container(
-        color: const Color(0xFFF7F5F0),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF8F6E8), AppTheme.cream, Color(0xFFEDE9D2)],
+          ),
+        ),
         child: Stack(
           children: [
             SafeArea(
@@ -281,7 +287,7 @@ class _SplashScreenState extends State<SplashScreen>
                                     _subtitles[_subtitleIndex],
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
-                                      color: Colors.black,
+                                      color: AppTheme.textMain,
                                       fontSize: 14.5,
                                       height: 1.4,
                                       fontWeight: FontWeight.w600,
@@ -295,7 +301,7 @@ class _SplashScreenState extends State<SplashScreen>
                                     'Powered by Attoneex Tech Solutions.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      color: Colors.black,
+                                      color: AppTheme.textMuted,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -313,7 +319,8 @@ class _SplashScreenState extends State<SplashScreen>
                                               'Google Sign-In is unavailable.',
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
-                                      color: Color(0xFFFF8A8A),
+                                      color: AppTheme.brandRed,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ],
@@ -330,10 +337,10 @@ class _SplashScreenState extends State<SplashScreen>
                                 ? Center(
                                     child: Platform.isIOS
                                         ? const CupertinoActivityIndicator(
-                                            color: Color(0xFF0F172A),
+                                            color: AppTheme.brandRed,
                                           )
                                         : const CircularProgressIndicator(
-                                            color: Color(0xFF0F172A),
+                                            color: AppTheme.brandRed,
                                           ),
                                   )
                                 : _GoogleButton(
@@ -346,11 +353,33 @@ class _SplashScreenState extends State<SplashScreen>
                           'By continuing you agree to our Terms & Privacy Policy.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Color(0xFF0F172A),
-                            fontSize: 14.5,
+                            color: AppTheme.textMuted,
+                            fontSize: 13.5,
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // ── Client (organizer) portal entry ───────────────────────────────
+            // Email/password portal for event organizers; the attendee app
+            // itself keeps using Google sign-in.
+            Positioned(
+              top: 6,
+              right: 6,
+              child: SafeArea(
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  shape: const CircleBorder(),
+                  elevation: 1,
+                  child: IconButton(
+                    tooltip: 'Client portal login',
+                    onPressed: () => context.push('/client/login'),
+                    icon: const Icon(
+                      Icons.account_circle_outlined,
+                      color: AppTheme.brandRed,
                     ),
                   ),
                 ),
@@ -381,7 +410,7 @@ class _EventOutLockup extends StatelessWidget {
   final double size;
   const _EventOutLockup({required this.size});
 
-  static const _brandRed = Color(0xFFA71112);
+  static const _brandRed = Color(0xFF991B1B);
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +496,13 @@ class _GoogleSuccessOverlayState extends State<_GoogleSuccessOverlay>
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(color: Color(0xFFF5F5DC)),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFF8F6E8), AppTheme.cream, Color(0xFFEDE9D2)],
+        ),
+      ),
       child: Center(
         child: FadeTransition(
           opacity: _contentFade,
@@ -481,7 +516,7 @@ class _GoogleSuccessOverlayState extends State<_GoogleSuccessOverlay>
                   'Welcome to EventOut!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFF111827),
+                    color: AppTheme.textMain,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
@@ -492,7 +527,7 @@ class _GoogleSuccessOverlayState extends State<_GoogleSuccessOverlay>
                   'You\u2019re signed in. Let\u2019s find your next event.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: AppTheme.textMuted,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                   ),

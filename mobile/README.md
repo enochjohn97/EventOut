@@ -17,14 +17,14 @@ Flutter companion app for Eventra attendees.
    - release keystore: run the same `keytool` command against your release keystore.
    - Current debug/release signing SHA-1: `DF:57:2A:32:82:5E:6D:8D:0F:39:80:53:31:08:D6:F7:2A:2F:56:9C`; SHA-256: `B8:44:D3:A9:E5:81:53:7A:C6:69:15:9D:95:3C:8A:16:AA:99:AA:2B:4A:DF:F7:5A:3C:68:26:4D:7F:45:56:A1`.
    - The current device test fails after account selection with Google's `UNREGISTERED_ON_API_CONSOLE`; register this package and signing certificate on an Android OAuth client in the same Cloud project as the web client.
-   - The fingerprint must be on the client whose **package name is `com.example.eventra_mobile`** (rename the app id and re-register if you change it).
+   - The fingerprint must be on the client whose **package name is `com.eventout_mobile`** (rename the app id and re-register if you change it).
 3. **OAuth consent screen** must be published (or the testers list must include the Google account used on device) and the `.../auth/...` scope must be non-sensitive / approved.
 4. If the API is hosted behind a challenge/WAF (e.g. InfinityFree-style), requests from the app must be allowlisted — see the splash-screen cookie bypass for that host.
 
 ### Manual steps (iOS)
 
 - `Info.plist` already contains `GIDClientID` and the reversed client ID URL scheme `com.googleusercontent.apps.76953809917-eguefgb6sgetu8a7g5grjh966il7slq6`. If you change the iOS client ID, update **both** keys together.
-- The iOS OAuth client in Google Cloud Console must have bundle id `com.example.eventraMobile` registered (see `PRODUCT_BUNDLE_IDENTIFIER` in `project.pbxproj`). Note the lowercase `m` — it is not `com.example.eventra_mobile`.
+- The iOS OAuth client in Google Cloud Console must have bundle id `com.eventout.mobile` registered (see `PRODUCT_BUNDLE_IDENTIFIER` in `project.pbxproj`). Apple bundle IDs cannot contain underscores, so this is the valid iOS equivalent of the Android package `com.eventout_mobile`. The existing iOS OAuth client belongs to the old bundle id; register a new iOS client for `com.eventout.mobile` and update `GIDClientID` and the reversed client ID URL scheme together.
 - No Firebase project is required for sign-in itself; `google-services.json` / `GoogleService-Info.plist` are not used by google_sign_in v7.
 
 ## Setup

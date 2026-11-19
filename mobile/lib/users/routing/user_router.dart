@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../../clients/providers/client_auth_provider.dart';
+import '../../clients/screens/client_login_screen.dart';
+import '../../clients/screens/client_shell_screen.dart';
 import '../../core/network/api_client.dart';
 import '../models/event_model.dart';
 import '../providers/auth_provider.dart';
@@ -12,19 +15,48 @@ import '../screens/user_shell_screen.dart';
 
 final GlobalKey<NavigatorState> userNavigatorKey = GlobalKey<NavigatorState>();
 
-GoRouter createUserRouter(AuthProvider authProvider) {
+GoRouter createUserRouter(
+  AuthProvider authProvider, {
+  ClientAuthProvider? clientAuthProvider,
+}) {
   return GoRouter(
     navigatorKey: userNavigatorKey,
     initialLocation: '/',
-    refreshListenable: authProvider,
+    refreshListenable: clientAuthProvider == null
+        ? authProvider
+        : Listenable.merge([authProvider, clientAuthProvider]),
     redirect: (context, state) {
       final path = state.matchedLocation;
+
+      // ── Organizer (client) portal ────────────────────────────────────────
+      // It has its own email/password session, so it must never be affected
+      // by the attendee Google auth state.
+      if (path == '/client' || path.startsWith('/client/')) {
+        final clientStatus =
+            clientAuthProvider?.status ?? ClientAuthStatus.unknown;
+        if (path == '/client') return '/client/login';
+        if (clientStatus == ClientAuthStatus.unknown) return null;
+        if (path == '/client/login' &&
+            clientStatus == ClientAuthStatus.authenticated) {
+          return '/client/home';
+        }
+        if (path == '/client/home' &&
+            clientStatus != ClientAuthStatus.authenticated) {
+          return '/client/login';
+        }
+        return null;
+      }
+
       final status = authProvider.status;
       final isPublic =
           path == '/' ||
           path.startsWith('/welcome') ||
           path.startsWith('/onboarding') ||
-          path.startsWith('/login');
+          path.startsWith('/login') ||
+          path == '/terms' ||
+          path == '/privacy' ||
+          path == '/cookies' ||
+          path == '/delete-data';
 
       if (status == AuthStatus.unknown) return null;
       if (status == AuthStatus.unauthenticated &&
@@ -49,6 +81,30 @@ GoRouter createUserRouter(AuthProvider authProvider) {
       GoRoute(path: '/welcome', redirect: (_, _) => '/login'),
       GoRoute(path: '/onboarding', redirect: (_, _) => '/login'),
       GoRoute(path: '/login', builder: (_, _) => const SplashScreen()),
+
+      // ── Client (organizer) portal ────────────────────────────────────────
+      GoRoute(
+        path: '/client/login',
+        builder: (_, _) => const ClientLoginScreen(),
+      ),
+      GoRoute(
+        path: '/client/home',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: const Duration(milliseconds: 350),
+          child: const ClientShellScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOut,
+              ),
+              child: child,
+            );
+          },
+        ),
+      ),
+
       GoRoute(
         path: '/profile-complete',
         builder: (_, _) => const ProfileCompleteScreen(),

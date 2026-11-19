@@ -108,9 +108,14 @@ class ApiClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await SecureStorage.getToken();
-          if (token != null && token.isNotEmpty) {
-            options.headers['Authorization'] = 'Bearer $token';
+          // Respect an explicit Authorization header: the client (organizer)
+          // portal sends its own Bearer token per request and must never be
+          // overwritten by the attendee session token.
+          if (!options.headers.containsKey('Authorization')) {
+            final token = await SecureStorage.getToken();
+            if (token != null && token.isNotEmpty) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
           }
           // Outbound requests send plaintext over TLS; client-side device key
           // encryption cannot be decrypted by the backend server.
@@ -339,9 +344,12 @@ class ApiClient {
                 path.endsWith('/auth/google') || path.contains('/config/');
             final alreadyRetried =
                 (error.requestOptions.extra['_authRecovered'] as bool?) == true;
+            final skipAuthRecovery =
+                error.requestOptions.extra['skipAuthRecovery'] == true;
             if ((code == 401 || code == 403) &&
                 !isAuthEndpoint &&
-                !alreadyRetried) {
+                !alreadyRetried &&
+                !skipAuthRecovery) {
               final recovered = await _trySilentRecovery(error.requestOptions);
               if (recovered != null) {
                 error.requestOptions.extra['_authRecovered'] = true;

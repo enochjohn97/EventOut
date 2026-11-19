@@ -173,7 +173,11 @@ try {
         $pdo->prepare("UPDATE auth_accounts SET failed_attempts = 0, last_login_at = NOW(), is_online = 1 WHERE id = ?")->execute([$user['id']]);
 
         // Update role-specific status when user logs in
-        if ($userRole === 'admin' || $userRole === 'client') {
+        if ($userRole === 'client') {
+            // Long-lived client token: the organizer phone app refreshes it
+            // silently, but it must survive longer than a single evening.
+            $expires_in = '+30 days';
+        } elseif ($userRole === 'admin') {
             $expires_in = '+2 hours';
         } else {
             $expires_in = $remember_me ? '+30 days' : '+7 days'; 

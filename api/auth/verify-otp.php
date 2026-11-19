@@ -97,14 +97,21 @@ if ($intent === 'client_login_otp') {
         $pdo->prepare("UPDATE clients SET email = ? WHERE client_auth_id = ?")->execute([$user['email'], $auth_id]);
 
         // 7. Create session and access token
-        $expires_at = date('Y-m-d H:i:s', strtotime('+1 hour'));
+        //
+        // Client sessions are long-lived: the phone keeps calling the API for
+        // days between logins and renews silently through
+        // /clients/refresh-session. A 1-hour token made every authenticated
+        // call fail as "Unauthorized" on a phone that had been idle, so the
+        // client portal issues a 30-day token. The expiry is computed by MySQL
+        // (NOW()) so PHP/DB timezone differences can never make a brand-new
+        // token look expired to the auth middleware.
         $token = bin2hex(random_bytes(32));
 
         // Delete old access tokens
         $pdo->prepare("DELETE FROM auth_tokens WHERE auth_id = ? AND type = 'access'")->execute([$auth_id]);
         // Insert new access token
-        $stmt = $pdo->prepare("INSERT INTO auth_tokens (auth_id, token, expires_at, type) VALUES (?, ?, ?, 'access')");
-        $stmt->execute([$auth_id, $token, $expires_at]);
+        $stmt = $pdo->prepare("INSERT INTO auth_tokens (auth_id, token, expires_at, type) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), 'access')");
+        $stmt->execute([$auth_id, $token]);
 
         // 8. Initialize session — close any auto-started session with the wrong
         //    name first (PHP ignores session_name() while a session is active,
@@ -361,10 +368,10 @@ try {
             // Reset failed attempts
             $pdo->prepare("UPDATE auth_accounts SET failed_attempts = 0, last_login_at = NOW(), is_online = 1 WHERE id = ?")->execute([$auth_id]);
 
-            // Generate access token
+            // Generate access token (30 days — same policy as the OTP login
+            // above so the mobile organizer portal does not lose its session).
             $token = bin2hex(random_bytes(32));
-            $expires_at = date('Y-m-d H:i:s', strtotime('+2 hours'));
-            $pdo->prepare("INSERT INTO auth_tokens (auth_id, token, expires_at, type) VALUES (?, ?, ?, 'access')")->execute([$auth_id, $token, $expires_at]);
+            $pdo->prepare("INSERT INTO auth_tokens (auth_id, token, expires_at, type) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), 'access')")->execute([$auth_id, $token]);
 
             // Set role-specific PK
             $stmt = $pdo->prepare("SELECT id, name, business_name FROM clients WHERE client_auth_id = ?");
