@@ -23,6 +23,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
   final _codeCtrl = TextEditingController();
   bool _obscure = true;
   bool _submitting = false;
+  bool _verificationInProgress = false;
   String? _error;
 
   static final _emailRule = RegExp(
@@ -63,28 +64,55 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
   }
 
   Future<void> _verifyCode() async {
+    if (_verificationInProgress) return;
+
     final code = _codeCtrl.text.trim();
-    if (code.length != 6) {
-      setState(() => _error = 'Enter the 6-digit code from your email.');
+
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      if (mounted) {
+        setState(() => _error = 'Enter the 6-digit code from your email.');
+      }
       return;
     }
+
     FocusScope.of(context).unfocus();
+
     setState(() {
+      _verificationInProgress = true;
       _submitting = true;
       _error = null;
     });
-    final ok = await context.read<ClientAuthProvider>().verifyLoginCode(code);
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (ok) {
-      context.go('/client/home');
-    } else {
-      _error =
-          context.read<ClientAuthProvider>().error ??
-          'Invalid verification code.';
+
+    try {
+      final ok = await context
+          .read<ClientAuthProvider>()
+          .verifyLoginCode(code);
+
+      if (!mounted) return;
+
+      if (ok) {
+        context.go('/client/home');
+        return;
+      }
+
+      setState(() {
+        _error = context.read<ClientAuthProvider>().error ??
+            'Invalid verification code.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _verificationInProgress = false;
+          _submitting = false;
+        });
+      }
     }
   }
-
   Future<void> _openSignup() async {
     final email = await showClientSignupSheet(context);
     if (!mounted || email == null) return;
@@ -178,7 +206,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      awaitingCode ? 'Check your email' : 'Welcome back',
+                      'Welcome back',
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -188,9 +216,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      awaitingCode
-                          ? 'We sent a 6-digit code to ${auth.pendingEmail ?? 'your email'}. It expires in 10 minutes.'
-                          : 'Sign in to manage your events, tickets and payouts.',
+                      'Sign in to manage your events, tickets and payouts.',
                       style: const TextStyle(
                         fontSize: 13.5,
                         height: 1.45,
@@ -212,11 +238,10 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                           ),
                         ],
                       ),
-                      child: awaitingCode ? _codeStep() : _formStep(),
+                      child: _formStep(),
                     ),
                     const SizedBox(height: 20),
-                    if (!awaitingCode)
-                      Center(
+                    Center(
                         child: Text.rich(
                           TextSpan(
                             text: 'New to EventOut? ',
@@ -264,6 +289,61 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                 right: 24,
                 bottom: 16,
                 child: _banner('Your session expired. Please sign in again.'),
+              ),
+            if (awaitingCode)
+              Positioned.fill(
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.56),
+                  child: SafeArea(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: Container(
+                            padding: const EdgeInsets.all(22),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.18),
+                                  blurRadius: 30,
+                                  offset: const Offset(0, 12),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Check your email',
+                                  style: TextStyle(
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textMain,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'We sent a 6-digit code to ${auth.pendingEmail ?? 'your email'}. Enter it below to continue.',
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    height: 1.45,
+                                    color: AppTheme.textMuted,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                _codeStep(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
@@ -385,6 +465,13 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
             counterText: '',
             hintText: '000000',
           ),
+          onChanged: (value) {
+            if (value.length == 6 &&
+                !_verificationInProgress &&
+                !_submitting) {
+              _verifyCode();
+            }
+          },
           onSubmitted: (_) => _verifyCode(),
         ),
         if (_error != null) ...[
