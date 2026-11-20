@@ -141,6 +141,7 @@ class ClientAvatar extends StatelessWidget {
     return ClipOval(
       child: CachedNetworkImage(
         imageUrl: url,
+        httpHeaders: ApiClient().imageHeadersFor(url),
         width: radius * 2,
         height: radius * 2,
         fit: BoxFit.cover,

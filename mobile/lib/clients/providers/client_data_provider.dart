@@ -67,7 +67,11 @@ class ClientDataProvider extends ChangeNotifier {
       // web dashboard shows from the records that did load instead of
       // displaying zeros (which looked like lost revenue/tickets).
       stats = freshStats ?? _derivedStats();
-      error = errors.isEmpty ? null : errors.first;
+      final dashboardError = errors.firstWhere(
+        (message) => !_isLegacyRoleError(message),
+        orElse: () => '',
+      );
+      error = dashboardError.isEmpty ? null : dashboardError;
       // Only mark as loaded when at least one endpoint answered, so a fully
       // failed first load is retried on the next tab switch.
       hasLoaded = results.any((result) => result != null);
@@ -90,6 +94,14 @@ class ClientDataProvider extends ChangeNotifier {
       return null;
     }
   }
+
+  bool _isLegacyRoleError(String message) =>
+      message
+              .trim()
+              .toLowerCase()
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .replaceFirst(RegExp(r'[.!]+$'), '') ==
+          'access denied. role not found in session';
 
   Future<void> refresh(int clientId) => load(clientId, force: true);
 

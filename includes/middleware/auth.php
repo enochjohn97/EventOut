@@ -303,9 +303,8 @@ function currentSessionRole()
         return $role;
     }
 
-    // Bearer-token requests start a fresh session per call on some hosts; if
-    // the role was never persisted, resolve it from the authenticated account
-    // instead of failing the endpoint with "Role not found in session."
+    // Bearer-token requests start a fresh session per call on some hosts, so
+    // recover a missing role from the authenticated account.
     $authId = $_SESSION['auth_id'] ?? null;
     if (!$authId) {
         return null;

@@ -104,22 +104,27 @@ class ClientEventModel {
       return int.tryParse(value.toString());
     }
 
-    var imagePath = json['image_path']?.toString();
-    var absoluteImage = json['absolute_image_url']?.toString();
-
-    // Preserve the server-provided URL when available.
-    if (absoluteImage == null || absoluteImage.isEmpty) {
-      if (imagePath != null && imagePath.isNotEmpty) {
-        final uri = Uri.tryParse(imagePath);
-
-        if (uri != null && uri.hasScheme) {
-          absoluteImage = imagePath;
-        } else if (baseOrigin != null && baseOrigin.isNotEmpty) {
-          absoluteImage =
-              '${baseOrigin.replaceFirst(RegExp(r'/$'), '')}/${imagePath.replaceFirst(RegExp(r'^/+'), '')}';
-        }
+    final imagePath = json['image_path']?.toString().trim();
+    String? resolveImageUrl(String? raw) {
+      final value = raw?.trim();
+      if (value == null || value.isEmpty) return null;
+      final uri = Uri.tryParse(value);
+      if (uri != null &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty) {
+        return uri.toString();
       }
+      final origin = Uri.tryParse(baseOrigin ?? '');
+      if (origin == null || !origin.hasScheme || origin.host.isEmpty) {
+        return null;
+      }
+      return origin.resolve(value.replaceAll(r'\', '/')).toString();
     }
+
+    // Prefer the root-relative image path over a possibly stale API URL.
+    final absoluteImage =
+        resolveImageUrl(imagePath) ??
+        resolveImageUrl(json['absolute_image_url']?.toString());
     return ClientEventModel(
       id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       customId: json['custom_id']?.toString(),

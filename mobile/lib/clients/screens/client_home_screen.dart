@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/brand_logo.dart';
 import '../models/client_event_model.dart';
@@ -287,6 +288,9 @@ class ClientHomeScreen extends StatelessWidget {
               child: event.absoluteImageUrl != null
                   ? CachedNetworkImage(
                       imageUrl: event.absoluteImageUrl!,
+                      httpHeaders: ApiClient().imageHeadersFor(
+                        event.absoluteImageUrl!,
+                      ),
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => _eventImageFallback(),
                     )

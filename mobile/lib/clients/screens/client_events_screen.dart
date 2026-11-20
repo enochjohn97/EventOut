@@ -263,6 +263,7 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
                 child: image != null && image.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: image,
+                        httpHeaders: ApiClient().imageHeadersFor(image),
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => _imageFallback(),
                       )

@@ -540,6 +540,24 @@ class ApiClient {
 
   String? _bypassCookie;
 
+  Map<String, String> imageHeadersFor(String imageUrl) {
+    final imageUri = Uri.tryParse(imageUrl);
+    final apiUri = Uri.tryParse(baseOrigin ?? '');
+    final sameOrigin = imageUri != null &&
+        apiUri != null &&
+        imageUri.scheme == apiUri.scheme &&
+        imageUri.host == apiUri.host &&
+        imageUri.port == apiUri.port;
+    final cookie = sameOrigin
+        ? _bypassCookie ?? EndpointResolver.solvedCookie
+        : null;
+    return {
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'User-Agent': 'Dart/3.12.2 (EventOut Mobile)',
+      if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie,
+    };
+  }
+
   /// Cookie obtained from the hosting anti-bot challenge. Attached to every
   /// request until the host issues a new one (solved inline by the interceptor).
   void setBypassCookie(String cookie) {

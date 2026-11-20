@@ -358,6 +358,7 @@ class _SheetBody extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl!,
+                  httpHeaders: ApiClient().imageHeadersFor(imageUrl!),
                   height: 150,
                   width: double.infinity,
                   fit: BoxFit.cover,
