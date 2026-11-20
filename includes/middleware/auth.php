@@ -196,8 +196,15 @@ function checkAuth($requiredRole = null)
                     return null;
                 }
 
-                if ($requiredRole && $user['role'] !== $requiredRole) {
-                    error_log("[checkAuth] Role mismatch for $auth_id: expected $requiredRole, got " . $user['role']);
+                // `$requiredRole` is often an array (e.g. ['user','admin','client']).
+                // Comparing a string role against that array made every such
+                // endpoint reject a valid Bearer token, so compare membership.
+                $roleAllowed = !$requiredRole
+                    || (is_array($requiredRole)
+                        ? in_array($user['role'], $requiredRole, true)
+                        : $user['role'] === $requiredRole);
+                if (!$roleAllowed) {
+                    error_log("[checkAuth] Role mismatch for $auth_id: expected " . (is_array($requiredRole) ? implode('|', $requiredRole) : $requiredRole) . ", got " . $user['role']);
                     return null;
                 }
                 
@@ -287,6 +294,40 @@ function getAuthId()
         require_once __DIR__ . '/../../config/session-config.php';
     }
     return $_SESSION['auth_id'] ?? null;
+}
+
+function currentSessionRole()
+{
+    $role = $_SESSION['user_role'] ?? $_SESSION['role'] ?? null;
+    if (!empty($role)) {
+        return $role;
+    }
+
+    // Bearer-token requests start a fresh session per call on some hosts; if
+    // the role was never persisted, resolve it from the authenticated account
+    // instead of failing the endpoint with "Role not found in session."
+    $authId = $_SESSION['auth_id'] ?? null;
+    if (!$authId) {
+        return null;
+    }
+
+    try {
+        if (!function_exists('getPDO')) {
+            require_once __DIR__ . '/../../config/database.php';
+        }
+        $pdo = getPDO();
+        $stmt = $pdo->prepare("SELECT role FROM auth_accounts WHERE id = ? AND deleted_at IS NULL LIMIT 1");
+        $stmt->execute([$authId]);
+        $role = $stmt->fetchColumn();
+        if ($role) {
+            $_SESSION['user_role'] = $role;
+            $_SESSION['role'] = $role;
+        }
+        return $role ?: null;
+    } catch (Throwable $e) {
+        error_log('[currentSessionRole] ' . $e->getMessage());
+        return null;
+    }
 }
 
 function adminMiddleware()

@@ -114,6 +114,14 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
             ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'client-create-event',
+        onPressed: () => widget.onCreateEvent(),
+        backgroundColor: AppTheme.brandRed,
+        foregroundColor: Colors.white,
+        tooltip: 'Create event',
+        child: const Icon(Icons.add),
+      ),
       body: Column(
         children: [
           if (!_searchCollapsed)
@@ -236,7 +244,16 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
           side: const BorderSide(color: Color(0xFFEDEFF3)),
         ),
         child: InkWell(
-          onTap: () => showClientEventDetails(context, event),
+          onTap: () => showClientEventDetails(
+            context,
+            event,
+            onChanged: () async {
+              final id = context.read<ClientAuthProvider>().client?.profileId;
+              if (id != null) {
+                await context.read<ClientDataProvider>().refresh(id);
+              }
+            },
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

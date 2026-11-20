@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../providers/client_auth_provider.dart';
+import '../services/client_auth_service.dart';
 import '../widgets/client_signup_sheet.dart';
 
 /// Organizer login. Deliberately email + password only — no Google, Facebook
@@ -84,9 +85,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
     });
 
     try {
-      final ok = await context
-          .read<ClientAuthProvider>()
-          .verifyLoginCode(code);
+      final ok = await context.read<ClientAuthProvider>().verifyLoginCode(code);
 
       if (!mounted) return;
 
@@ -96,7 +95,8 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
       }
 
       setState(() {
-        _error = context.read<ClientAuthProvider>().error ??
+        _error =
+            context.read<ClientAuthProvider>().error ??
             'Invalid verification code.';
       });
     } catch (e) {
@@ -113,6 +113,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
       }
     }
   }
+
   Future<void> _openSignup() async {
     final email = await showClientSignupSheet(context);
     if (!mounted || email == null) return;
@@ -242,42 +243,32 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                     ),
                     const SizedBox(height: 20),
                     Center(
-                        child: Text.rich(
-                          TextSpan(
-                            text: 'New to EventOut? ',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textMuted,
-                            ),
-                            children: [
-                              WidgetSpan(
-                                child: GestureDetector(
-                                  onTap: _openSignup,
-                                  child: const Text(
-                                    'Create a client account',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.brandRed,
-                                    ),
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'New to EventOut? ',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textMuted,
+                          ),
+                          children: [
+                            WidgetSpan(
+                              child: GestureDetector(
+                                onTap: _openSignup,
+                                child: const Text(
+                                  'Create a client account',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.brandRed,
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 28),
-                    const Center(
-                      child: Text(
-                        'Client accounts use email and password only.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: AppTheme.textMuted,
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
                     _legalRow(),
                   ],
                 ),
@@ -404,8 +395,27 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
               return null;
             },
           ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _submitting ? null : _forgotPassword,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Forgot password?',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.brandRed,
+                ),
+              ),
+            ),
+          ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               _error!,
               style: const TextStyle(
@@ -415,7 +425,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -466,9 +476,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
             hintText: '000000',
           ),
           onChanged: (value) {
-            if (value.length == 6 &&
-                !_verificationInProgress &&
-                !_submitting) {
+            if (value.length == 6 && !_verificationInProgress && !_submitting) {
               _verifyCode();
             }
           },
@@ -506,29 +514,12 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                 : const Text('Verify & sign in'),
           ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: _submitting
-                    ? null
-                    : () async {
-                        auth.cancelCodeStep();
-                        setState(() => _error = null);
-                      },
-                child: const Text(
-                  'Different account',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            Expanded(
-              child: TextButton(
-                onPressed: _submitting
-                    ? null
-                    : () async {
+        const SizedBox(height: 4),
+        Center(
+          child: TextButton(
+            onPressed: _submitting
+                ? null
+                : () async {
                         setState(() => _submitting = true);
                         try {
                           await auth.startLogin(
@@ -558,14 +549,34 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
                             );
                           });
                         }
-                      },
-                child: const Text('Resend code'),
-              ),
-            ),
-          ],
+                  },
+            child: const Text('Resend code'),
+          ),
         ),
       ],
     );
+  }
+
+  Future<void> _forgotPassword() async {
+    FocusScope.of(context).unfocus();
+    final email = await showClientForgotPasswordDialog(
+      context,
+      initialEmail: _emailCtrl.text.trim(),
+    );
+    if (!mounted || email == null) return;
+    setState(() {
+      _emailCtrl.text = email;
+      _passwordCtrl.clear();
+      _error = null;
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Password updated. Sign in with your new password.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Widget _legalRow() {
@@ -615,6 +626,281 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The web portal's three-step password recovery, as one dialog:
+/// email → emailed 6-digit code → new password.
+Future<String?> showClientForgotPasswordDialog(
+  BuildContext context, {
+  String initialEmail = '',
+}) {
+  return showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _ForgotPasswordDialog(initialEmail: initialEmail),
+  );
+}
+
+class _ForgotPasswordDialog extends StatefulWidget {
+  final String initialEmail;
+
+  const _ForgotPasswordDialog({required this.initialEmail});
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final TextEditingController _emailCtrl = TextEditingController(
+    text: widget.initialEmail,
+  );
+  final _codeCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+
+  int _step = 0;
+  bool _busy = false;
+  bool _obscure = true;
+  String? _error;
+  String? _resetToken;
+
+  static final _emailRule = RegExp(
+    r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}$",
+    caseSensitive: false,
+  );
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sendCode() {
+    final email = _emailCtrl.text.trim();
+    return _run(() async {
+      if (email.isEmpty) {
+        throw Exception('Email is required');
+      }
+      if (!_emailRule.hasMatch(email)) {
+        throw Exception('Enter a valid email address');
+      }
+      await ClientAuthService.requestPasswordReset(email);
+      if (!mounted) return;
+      setState(() {
+        _step = 1;
+        _codeCtrl.clear();
+      });
+    });
+  }
+
+  Future<void> _verifyCode() {
+    final code = _codeCtrl.text.trim();
+    return _run(() async {
+      if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+        throw Exception('Enter the 6-digit code from your email.');
+      }
+      final token = await ClientAuthService.verifyResetCode(
+        email: _emailCtrl.text.trim(),
+        code: code,
+      );
+      if (!mounted) return;
+      setState(() {
+        _resetToken = token;
+        _step = 2;
+      });
+    });
+  }
+
+  Future<void> _resetPassword() {
+    final password = _passwordCtrl.text;
+    return _run(() async {
+      if (password.length < 8) {
+        throw Exception('Password must be at least 8 characters long.');
+      }
+      if (password != _confirmCtrl.text) {
+        throw Exception('Passwords do not match.');
+      }
+      final token = _resetToken;
+      if (token == null) {
+        throw Exception('Your reset session expired. Request a new code.');
+      }
+      await ClientAuthService.resetPassword(
+        resetToken: token,
+        password: password,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, _emailCtrl.text.trim());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        switch (_step) {
+          1 => 'Verify the code',
+          2 => 'Set a new password',
+          _ => 'Forgot password?',
+        },
+        style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              switch (_step) {
+                1 =>
+                  'We sent a 6-digit code to ${_emailCtrl.text.trim()}. Enter it below.',
+                2 => 'Choose a new password (at least 8 characters).',
+                _ =>
+                  'Enter your registered email address to receive a reset code.',
+              },
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AppTheme.textMuted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_step == 0)
+              TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                autofocus: true,
+                enabled: !_busy,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.mail_outline),
+                ),
+              ),
+            if (_step == 1)
+              TextField(
+                controller: _codeCtrl,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                autofocus: true,
+                maxLength: 6,
+                enabled: !_busy,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 8,
+                ),
+                decoration: const InputDecoration(
+                  counterText: '',
+                  hintText: '000000',
+                ),
+              ),
+            if (_step == 2) ...[
+              TextField(
+                controller: _passwordCtrl,
+                obscureText: _obscure,
+                autofocus: true,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: 'New password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                    icon: Icon(
+                      _obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmCtrl,
+                obscureText: _obscure,
+                enabled: !_busy,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm password',
+                  prefixIcon: Icon(Icons.lock_reset),
+                ),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _busy
+              ? null
+              : switch (_step) {
+                  1 => _verifyCode,
+                  2 => _resetPassword,
+                  _ => _sendCode,
+                },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.brandRed,
+            foregroundColor: Colors.white,
+          ),
+          child: _busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  switch (_step) {
+                    1 => 'Verify code',
+                    2 => 'Reset password',
+                    _ => 'Send code',
+                  },
+                ),
+        ),
+      ],
     );
   }
 }

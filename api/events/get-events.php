@@ -42,7 +42,9 @@ try {
     $limit     = ($_GET['limit'] ?? '') === 'all' ? 10000 : (int)($_GET['limit'] ?? 10);
     if ($limit <= 0) $limit = 10;
     $offset    = max(0, (int) ($_GET['offset'] ?? 0));
-    $user_role = $_SESSION['user_role'] ?? 'guest';
+    // currentSessionRole() also resolves the role for Bearer-token calls (the
+    // mobile app), which start a fresh PHP session on every request.
+    $user_role = currentSessionRole() ?? 'guest';
 
     $user_state = trim($_GET['user_state'] ?? '');
 
