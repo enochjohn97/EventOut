@@ -38,6 +38,8 @@ dependencies:
   app_links: ^6.4.0
   file_picker: 13.4.0
 
+  material_ui: any
+  cupertino_ui: any
 dev_dependencies:
   flutter_test:
     sdk: flutter
