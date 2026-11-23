@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
+import 'package:file_picker/file_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/adaptive_dialogs.dart';
 import '../models/client_model.dart';
@@ -70,6 +70,15 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   String? _state;
   bool _editing = false;
   bool _initialized = false;
+  final Map<String, String> _kycFilePaths = {};
+  double _kycUploadProgress = 0;
+
+  static const _kycDocuments = <String, String>{
+    'kyc_nin_file': 'NIN document',
+    'kyc_voter_card_file': "Voter's card",
+    'kyc_driver_license_file': "Driver's licence",
+    'kyc_cac_file': 'CAC registration document',
+  };
 
   @override
   void initState() {
@@ -123,24 +132,95 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<ClientAuthProvider>();
-    final ok = await auth.updateProfile({
-      'name': _nameCtrl.text,
-      'business_name': _businessCtrl.text,
-      'phone': _phoneCtrl.text,
-      'address': _addressCtrl.text,
-      'city': _cityCtrl.text,
-      'state': _state ?? '',
-      'country': _countryCtrl.text,
-      'job_title': _jobCtrl.text,
-      'company': _companyCtrl.text,
-    });
+    setState(() => _kycUploadProgress = 0);
+    final ok = await auth.updateProfile(
+      {
+        'name': _nameCtrl.text,
+        'business_name': _businessCtrl.text,
+        'phone': _phoneCtrl.text,
+        'address': _addressCtrl.text,
+        'city': _cityCtrl.text,
+        'state': _state ?? '',
+        'country': _countryCtrl.text,
+        'job_title': _jobCtrl.text,
+        'company': _companyCtrl.text,
+      },
+      kycFilePaths: Map<String, String>.from(_kycFilePaths),
+      onSendProgress: (sent, total) {
+        if (!mounted || total <= 0) return;
+        setState(() => _kycUploadProgress = sent / total);
+      },
+    );
     if (!mounted) return;
     if (ok) {
-      setState(() => _editing = false);
+      setState(() {
+        _kycFilePaths.clear();
+        _kycUploadProgress = 0;
+        _editing = false;
+      });
       _toast('Profile updated and synced with the website.', AppTheme.success);
     } else {
       _toast(auth.error ?? 'Could not update your profile.', AppTheme.error);
     }
+  }
+
+  Future<void> _pickKycDocument(String field) async {
+    try {
+      final file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+      );
+
+      if (file == null) return;
+      final path = file.path;
+
+      if (path == null || path.isEmpty) {
+        _toast(
+          'Could not access the selected file. Please choose it again.',
+          AppTheme.error,
+        );
+        return;
+      }
+
+      final fileLength = await file.length();
+      if (fileLength != null && fileLength > 2 * 1024 * 1024) {
+        _toast(
+          'This server currently accepts files up to 2 MB.',
+          AppTheme.error,
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() => _kycFilePaths[field] = path);
+    } catch (e) {
+      if (mounted) {
+        _toast('Could not select document: $e', AppTheme.error);
+      }
+    }
+  }
+
+  Widget _kycDocumentTile(String field, String label) {
+    final path = _kycFilePaths[field];
+    final filename = path?.replaceAll('\\', '/').split('/').last;
+
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.description_outlined),
+        title: Text(label),
+        subtitle: Text(
+          filename ?? 'No document selected',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: TextButton(
+          onPressed: context.read<ClientAuthProvider>().isLoading
+              ? null
+              : () => _pickKycDocument(field),
+          child: Text(filename == null ? 'Choose' : 'Replace'),
+        ),
+      ),
+    );
   }
 
   void _toast(String message, Color color) {
@@ -498,6 +578,28 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             ),
           ),
           const SizedBox(height: 18),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Identity documents (PDF or image, maximum 2 MB each)',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._kycDocuments.entries.map(
+            (entry) => _kycDocumentTile(entry.key, entry.value),
+          ),
+          if (auth.isLoading && _kycFilePaths.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: _kycUploadProgress > 0 ? _kycUploadProgress : null,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${(_kycUploadProgress * 100).clamp(0, 100).toStringAsFixed(0)}% uploaded',
+            ),
+          ],
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -522,6 +624,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                   ? null
                   : () => setState(() {
                       _sync(auth.client);
+                      _kycFilePaths.clear();
+                      _kycUploadProgress = 0;
                       _editing = false;
                     }),
               child: const Text('Cancel'),

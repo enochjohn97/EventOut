@@ -43,17 +43,19 @@ $googleConfig = require __DIR__ . '/../../config/google.php';
  *                            verification below and hand the session back to
  *                            the app through eventout://auth?token=...
  */
-// Pin the live domain (APP_URL → https://eventout.com.ng) so the redirect URI
-// matches the one registered for the web client; only a local dev server
-// falls back to its own request host.
-$oauthOrigin = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/');
-if ($oauthOrigin === '') {
-    $oauthOrigin = rtrim((string) ($googleConfig['origin'] ?? ''), '/');
+// Use the exact redirect URI registered for the web OAuth client. For local
+// development, keep using the current local host instead of the production URI.
+$oauthRedirectUri = trim((string) ($_ENV['GOOGLE_REDIRECT_URI'] ?? ''));
+if ($oauthRedirectUri === '' || isLocalHost()) {
+    $oauthOrigin = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/');
+    if ($oauthOrigin === '') {
+        $oauthOrigin = rtrim((string) ($googleConfig['origin'] ?? ''), '/');
+    }
+    if ($oauthOrigin === '') {
+        $oauthOrigin = 'https://eventout.com.ng';
+    }
+    $oauthRedirectUri = $oauthOrigin . '/api/auth/google-handler.php';
 }
-if ($oauthOrigin === '') {
-    $oauthOrigin = 'https://eventout.com.ng';
-}
-$oauthRedirectUri = $oauthOrigin . '/api/auth/google-handler.php';
 $oauthMobile = false;
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {

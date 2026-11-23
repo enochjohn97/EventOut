@@ -263,11 +263,12 @@ class ClientAuthService {
   static Future<ClientModel> updateProfile(
     Map<String, String> fields, {
     String? profilePicPath,
+    Map<String, String> kycFilePaths = const {},
+    void Function(int, int)? onSendProgress,
   }) async {
     try {
       final form = FormData();
       for (final entry in fields.entries) {
-        if (entry.value.trim().isEmpty) continue;
         form.fields.add(MapEntry(entry.key, entry.value.trim()));
       }
       if (profilePicPath != null && profilePicPath.isNotEmpty) {
@@ -275,6 +276,29 @@ class ClientAuthService {
           MapEntry('profile_pic', await MultipartFile.fromFile(profilePicPath)),
         );
       }
+
+      const allowedKycFields = {
+        'kyc_nin_file',
+        'kyc_voter_card_file',
+        'kyc_driver_license_file',
+        'kyc_cac_file',
+      };
+
+      for (final entry in kycFilePaths.entries) {
+        if (!allowedKycFields.contains(entry.key)) continue;
+        if (entry.value.trim().isEmpty) continue;
+
+        form.files.add(
+          MapEntry(
+            entry.key,
+            await MultipartFile.fromFile(
+              entry.value,
+              filename: entry.value.replaceAll('\\', '/').split('/').last,
+            ),
+          ),
+        );
+      }
+
       // POST, not PUT: PHP only parses multipart bodies into $_POST for POST
       // requests, so a PUT would silently update nothing.
       final response = await _dio.post(
@@ -284,6 +308,7 @@ class ClientAuthService {
           headers: ClientSession.headers(json: false),
           extra: ClientSession.requestExtra(),
         ),
+        onSendProgress: onSendProgress,
       );
       final data = _toMap(response.data);
       if (data['success'] != true) {

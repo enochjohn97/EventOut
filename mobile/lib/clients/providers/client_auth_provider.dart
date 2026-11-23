@@ -183,6 +183,8 @@ class ClientAuthProvider extends ChangeNotifier {
   Future<bool> updateProfile(
     Map<String, String> fields, {
     String? profilePicPath,
+    Map<String, String> kycFilePaths = const {},
+    void Function(int, int)? onSendProgress,
   }) async {
     isLoading = true;
     error = null;
@@ -191,6 +193,8 @@ class ClientAuthProvider extends ChangeNotifier {
       final updated = await ClientAuthService.updateProfile(
         fields,
         profilePicPath: profilePicPath,
+        kycFilePaths: kycFilePaths,
+        onSendProgress: onSendProgress,
       );
       client = client == null
           ? updated

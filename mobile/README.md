@@ -11,7 +11,7 @@ Flutter companion app for Eventra attendees.
 
 ### Manual steps required outside the code (Android)
 
-1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist and its **Authorized JavaScript origins** must include your API host (`https://eventout.com.ng`, plus `http://localhost:8080` for local dev).
+1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist. Its **Authorized JavaScript origins** must include your API host (`https://eventout.com.ng`, plus `http://localhost:8080` for local dev), and its **Authorized redirect URIs** must include the exact callback `https://eventout.com.ng/api/auth/google-handler.php` (or the value configured by `GOOGLE_REDIRECT_URI`). Origins do not substitute for redirect URIs. Google reports `Error 400: redirect_uri_mismatch` / “This app’s request is invalid” when this callback is not registered.
 2. Register the app's **SHA-1 and SHA-256 fingerprints** on the **Android** OAuth client:
    - debug keystore: `cd android && ./gradlew signingReport` (or `keytool -list -v -alias androiddebugkey -keystore %USERPROFILE%\.android\debug.keystore -storepass android`)
    - release keystore: run the same `keytool` command against your release keystore.
