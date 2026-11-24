@@ -360,6 +360,7 @@ function showCreateEventModal(eventToEdit = null) {
                                     <button type="submit" class="btn btn-primary" style="flex: 2; padding: 1.25rem; font-size: 1.125rem; font-weight: 700; justify-content: center; background: #722f37; border: none; border-radius: 14px; color: white; cursor: pointer; box-shadow: 0 10px 25px rgba(79, 70, 229, 0.3); transition: all 0.3s;">
                                         Create Event
                                     </button>
+                                    <button type="button" class="btn btn-secondary" onclick="resetCreateEventForm()" style="flex:1;padding:1.25rem;background:#fff7ed;border:2px solid #fed7aa;border-radius:14px;color:#9a3412;font-weight:600;cursor:pointer;">Reset</button>
                                     <button type="button" class="btn btn-secondary" onclick="closeCreateEventModal()" style="flex: 1; padding: 1.25rem; font-size: 1.125rem; justify-content: center; background: white; border: 2px solid #e5e7eb; border-radius: 14px; color: #6b7280; cursor: pointer; font-weight: 600; transition: all 0.3s;">
                                         Cancel
                                     </button>
@@ -788,34 +789,7 @@ function showCreateEventModal(eventToEdit = null) {
   // Inject the per-state address container below the main address textarea
   injectPerStateContainer();
 
-  // Add persistence: save on input
-  createEventForm.addEventListener("input", () =>
-    saveFormState("createEventForm"),
-  );
-  createEventForm.addEventListener("change", () =>
-    saveFormState("createEventForm"),
-  );
-
-  // Restore saved state
-  restoreFormState("createEventForm");
-
-  // Sync date display after restoration
-  const restoredDate = document.getElementById("eventDateInput")?.value;
-  if (restoredDate) {
-    const dateObj = new Date(restoredDate + "T00:00:00");
-    if (!isNaN(dateObj.getTime())) {
-      const displayOpts = { month: "long", day: "numeric", year: "numeric" };
-      document.getElementById("customDateDisplay").value =
-        dateObj.toLocaleDateString("en-US", displayOpts);
-      window.mdpSelectedDate = dateObj;
-    }
-  }
-
-  // Sync time picker UI with restored value if it exists
-  const restoredTime = document.getElementById("eventTimeInput")?.value;
-  if (restoredTime && typeof setTimePickerValue === "function") {
-    setTimePickerValue("eventTimePickerContainer", restoredTime);
-  }
+  // CREATE_FORM_FRESH_V1: new forms open blank; edit forms are populated above.
 
   // LISTING_OPTION_CONTROLLER_V1
   const listingTypeSelect = document.getElementById("listingTypeSelect");
@@ -874,7 +848,7 @@ function showCreateEventModal(eventToEdit = null) {
     if (listingFeeNotice) {
       if (isAdsOnly) {
         listingFeeNotice.textContent =
-          "Ads Only listing fee: ₦500. Ticket sales and ticket issuance are not available for this listing.";
+          "Ads Only listing fee: ₦500. Venue address, event date and time are optional. You may select one or multiple states, or leave location details blank. Ticket sales and ticket issuance are not available for this listing.";
       } else if (isTicketed) {
         const tier = capacityTierSelect?.value || "";
         listingFeeNotice.textContent = tier
@@ -1319,6 +1293,60 @@ async function handleGoogleCalendarSchedule(e) {
  * Normal create/update event submit flow (Google Calendar scheduling is
  * currently disabled — see the commented handleGoogleCalendarSchedule above).
  */
+function resetCreateEventForm() {
+  const form = document.getElementById("createEventForm");
+  if (!form) return;
+  form.reset();
+
+  form.querySelectorAll(
+    'input[type="text"],input[type="email"],input[type="tel"],input[type="number"],input[type="date"],input[type="time"],input[type="hidden"],textarea'
+  ).forEach((el) => { el.value = ""; });
+  form.querySelectorAll('input[type="checkbox"],input[type="radio"]')
+    .forEach((el) => { el.checked = false; });
+
+  // Reapply listing rules after clearing the listing selection.
+  document.getElementById("listingTypeSelect")
+    ?.dispatchEvent(new Event("change", { bubbles: true }));
+  document.getElementById("capacityTierSelect")
+    ?.dispatchEvent(new Event("change", { bubbles: true }));
+
+  const states = document.getElementById("perStateAddressContainer");
+  if (states) {
+    states.innerHTML = "";
+    states.style.display = "none";
+  }
+
+  if (typeof updateSelectedStates === "function") {
+    updateSelectedStates();
+  }
+
+  const statusInput = form.querySelector('input[name="status"]');
+  if (statusInput && !form.hasAttribute("data-event-id")) {
+    statusInput.value = "draft";
+  }
+
+  const image = document.getElementById("eventImageInput");
+  if (image) image.value = "";
+  const preview = document.getElementById("eventImagePreview");
+  if (preview) {
+    preview.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+    preview.dataset.hasImage = "0";
+    preview.style.display = "block";
+    preview.style.background = "#f3f4f6";
+    preview.style.height = "280px";
+  }
+
+  ["eventTagField", "eventLinkField", "customDateDisplay"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  window.mdpSelectedDate = null;
+
+  if (typeof clearFormState === "function") {
+    clearFormState("createEventForm");
+  }
+}
+
 async function handleCreateEventSubmit(e) {
   e.preventDefault();
 
@@ -1438,76 +1466,78 @@ async function handleCreateEventSubmit(e) {
   const perStateTextareas = document.querySelectorAll(
     "#perStateAddressContainer textarea[data-state]",
   );
-  if (perStateTextareas.length > 0) {
-    const customizeDates =
-      document.getElementById("customizeDatesPerStateCheckbox")?.checked ||
-      false;
-    const locations = Array.from(perStateTextareas)
-      .map((ta) => {
-        const state = ta.dataset.state;
-        const loc = { state, address: ta.value.trim() };
-        if (customizeDates) {
-          const dateInput = document.querySelector(
-            `#perStateAddressContainer input[data-date-state="${state}"]`,
-          );
-          const timeInput = document.querySelector(
-            `#perStateAddressContainer input[data-time-state="${state}"]`,
-          );
-          if (dateInput && dateInput.value) loc.date = dateInput.value;
-          if (timeInput && timeInput.value) loc.time = timeInput.value;
-        }
-        return loc;
-      })
-      .filter((l) => l.state);
+  const customizeDates =
+    document.getElementById("customizeDatesPerStateCheckbox")?.checked || false;
 
-    if (locations.length > 0) {
-      const missing = locations.filter((l) => !l.address);
-      if (missing.length > 0) {
+  if (perStateTextareas.length > 0) {
+    const locations = Array.from(perStateTextareas).map((ta) => {
+      const state = (ta.dataset.state || "").trim();
+      const loc = { state };
+      if (ta.value.trim()) loc.address = ta.value.trim();
+
+      const dateInput = document.querySelector(
+        `#perStateAddressContainer input[data-date-state="${state}"]`,
+      );
+      const timeInput = document.querySelector(
+        `#perStateAddressContainer input[data-time-state="${state}"]`,
+      );
+      if (dateInput?.value) loc.date = dateInput.value;
+      if (timeInput?.value) loc.time = timeInput.value;
+      return loc;
+    }).filter((loc) => loc.state);
+
+    if (listingType === "ticketed") {
+      const missingAddresses = locations.filter((loc) => !loc.address);
+      if (missingAddresses.length) {
         showNotification(
-          `Please enter the venue address for: ${missing.map((l) => l.state).join(", ")}`,
+          `Please enter the venue address for: ${missingAddresses.map((loc) => loc.state).join(", ")}`,
           "error",
         );
         return;
       }
       if (customizeDates) {
-        const missingDates = locations.filter((l) => !l.date);
-        if (missingDates.length > 0) {
+        const missingDates = locations.filter((loc) => !loc.date);
+        const missingTimes = locations.filter((loc) => !loc.time);
+        if (missingDates.length || missingTimes.length) {
           showNotification(
-            `Please enter the date for: ${missingDates.map((l) => l.state).join(", ")}`,
+            `Please complete the different dates and times for all selected states.`,
             "error",
           );
           return;
         }
-        const missingTimes = locations.filter((l) => !l.time);
-        if (missingTimes.length > 0) {
-          showNotification(
-            `Please enter the time for: ${missingTimes.map((l) => l.state).join(", ")}`,
-            "error",
-          );
-          return;
-        }
-        const sorted = [...locations].sort((a, b) => {
-          const da = new Date(`${a.date}T${a.time || "00:00"}`);
-          const db = new Date(`${b.date}T${b.time || "00:00"}`);
-          return da - db;
-        });
-        formData.set("event_date", sorted[0].date);
-        if (sorted[0].time) formData.set("event_time", sorted[0].time);
       }
-      formData.set("locations_json", JSON.stringify(locations));
-      if (locations[0] && !formData.get("address")) {
-        formData.set("address", locations[0].address);
-      }
+    }
+
+    formData.set("locations_json", JSON.stringify(locations));
+    const dated = locations.filter((loc) => loc.date).sort((x, y) =>
+      new Date(`${x.date}T${x.time || "00:00"}`) -
+      new Date(`${y.date}T${y.time || "00:00"}`)
+    );
+    if (dated.length && !String(formData.get("event_date") || "").trim()) {
+      formData.set("event_date", dated[0].date);
+    }
+    if (dated.length && dated[0].time &&
+        !String(formData.get("event_time") || "").trim()) {
+      formData.set("event_time", dated[0].time);
+    }
+    if (locations.length && locations[0].address &&
+        !String(formData.get("address") || "").trim()) {
+      formData.set("address", locations[0].address);
     }
   } else {
-    const singleState = formData.get("state") || "";
-    const singleAddr = formData.get("address") || "";
-    if (singleState && singleAddr) {
-      formData.set(
-        "locations_json",
-        JSON.stringify([{ state: singleState, address: singleAddr }]),
-      );
-    }
+    const location = {};
+    const state = String(formData.get("state") || "").trim();
+    const address = String(formData.get("address") || "").trim();
+    const date = String(formData.get("event_date") || "").trim();
+    const time = String(formData.get("event_time") || "").trim();
+    if (state) location.state = state;
+    if (address) location.address = address;
+    if (date) location.date = date;
+    if (time) location.time = time;
+    formData.set(
+      "locations_json",
+      Object.keys(location).length ? JSON.stringify([location]) : "[]",
+    );
   }
 
   const eventId = e.target.getAttribute("data-event-id");
@@ -1972,7 +2002,9 @@ function updateSelectedStates() {
     mainAddressTextarea.placeholder = hasMultipleIndividual
       ? "Street address, landmarks… (optional if per-state addresses are entered below)"
       : "Street address, landmarks…";
-    mainAddressTextarea.required = !hasMultipleIndividual;
+    const isTicketed =
+      document.getElementById("listingTypeSelect")?.value === "ticketed";
+    mainAddressTextarea.required = isTicketed && !hasMultipleIndividual;
   }
 
   // Inject per-state address fields if multiple states are selected
@@ -2044,7 +2076,7 @@ function renderPerStateAddressFields(states) {
                     data-state="${state}"
                     placeholder="Full venue address in ${state}..."
                     rows="2"
-                    required
+                    ${document.getElementById("listingTypeSelect")?.value === "ticketed" ? "required" : ""}
                     class="per-state-address-input"
                 >${existing[state] || ""}</textarea>
                 <div class="per-state-datetime" style="display:${customizeDatesWasChecked ? "grid" : "none"};">

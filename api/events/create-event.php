@@ -242,10 +242,11 @@ try {
     $event_time = $_POST['event_time'] ?? '';
     $phone_contact_1 = $_POST['phone_contact_1'] ?? '';
     $phone_contact_2 = !empty($_POST['phone_contact_2']) ? $_POST['phone_contact_2'] : null;
-    $state = $_POST['state'] ?? '';
+    $state = trim((string) ($_POST['state'] ?? ''));
     $address = $_POST['address'] ?? '';
     $visibility = $_POST['visibility'] ?? 'all states';
-    $event_visibility = $_POST['event_visibility'] ?? 'public'; // public or private
+
+    // Multiple states are represented by locations_json; state remains the primary state.\n    $event_visibility = $_POST['event_visibility'] ?? 'public'; // public or private
     $price = !empty($_POST['price']) ? floatval($_POST['price']) : 0.00;
 
     // ── Parse per-state locations JSON ───────────────────────────────────────
@@ -269,11 +270,31 @@ try {
                 }
             }
             if (!empty($clean_locations)) {
-                $locations_json = json_encode($clean_locations);
-                // Keep $state as comma-joined list for backward-compat
-                if (empty($state)) {
-                    $state = implode(',', array_column($clean_locations, 'state'));
+                // EVENTOUT_MULTI_STATE_CREATE_V2: validate all submitted states.
+                $locationStates = array_values(array_unique(array_map(
+                    static fn($item) => strtolower(trim($item['state'])),
+                    $clean_locations
+                )));
+
+                $selectedStates = array_values(array_filter(array_map(
+                    static fn($value) => strtolower(trim($value)),
+                    explode(',', $state)
+                )));
+
+                $unmatchedStates = array_diff($selectedStates, $locationStates);
+
+                if (!empty($unmatchedStates)) {
+                    http_response_code(422);
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'One or more selected states do not match the event locations.'
+                    ]);
+                    exit;
                 }
+
+                // Keep every selected location state for backward compatibility.
+                $state = implode(',', array_column($clean_locations, 'state'));
+                $locations_json = json_encode($clean_locations);
                 // Use first entry as canonical address fallback
                 if (empty($address) && !empty($clean_locations[0]['address'])) {
                     $address = $clean_locations[0]['address'];
@@ -298,95 +319,184 @@ try {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // New pricing fields
+    // EVENT_LISTING_RULES_V1
+    // Server-authoritative listing types and fees.
+    $listing_type = trim((string) ($_POST['listing_type'] ?? ''));
+    $capacity_tier = trim((string) ($_POST['capacity_tier'] ?? ''));
+
+    $listingFees = [
+        '0-100' => 1000,
+        '101-250' => 1500,
+        '251-500' => 2000,
+        '501-1000' => 2500,
+        '1001-unlimited' => 3000
+    ];
+
+    if (!in_array($listing_type, ['ads_only', 'ticketed'], true)) {
+        throw new Exception("Please select Ads Only or Ads with Events & Ticketing.");
+    }
+
+    $listing_fee_amount = 500;
+    $private_fee_amount = 0;
+    $is_free = false;
+
     $ticket_type = $_POST['ticket_type'] ?? 'regular';
-    // Handle both legacy single-value radio ('ticket_type_mode') and new
-    // multi-checkbox array ('ticket_type_mode[]') submissions.
-    $raw_mode = $_POST['ticket_type_mode'] ?? null;
-    if ($raw_mode === null) {
-        $raw_mode = 'all'; // default
-    }
-    if (is_array($raw_mode)) {
-        // Multi-checkbox: join selected values into a comma-separated string
-        $ticket_type_mode = implode(',', array_filter(array_map('trim', $raw_mode)));
-        if (empty($ticket_type_mode)) $ticket_type_mode = 'all';
+
+    $regular_price = !empty($_POST['regular_price'])
+        ? (float) $_POST['regular_price'] : 0.00;
+    $vip_price = !empty($_POST['vip_price'])
+        ? (float) $_POST['vip_price'] : 0.00;
+    $premium_price = !empty($_POST['premium_price'])
+        ? (float) $_POST['premium_price'] : 0.00;
+
+    $regular_quantity = isset($_POST['regular_quantity']) && $_POST['regular_quantity'] !== ''
+        ? (int) $_POST['regular_quantity'] : null;
+    $vip_quantity = isset($_POST['vip_quantity']) && $_POST['vip_quantity'] !== ''
+        ? (int) $_POST['vip_quantity'] : null;
+    $premium_quantity = isset($_POST['premium_quantity']) && $_POST['premium_quantity'] !== ''
+        ? (int) $_POST['premium_quantity'] : null;
+
+    if ($listing_type === 'ads_only') {
+        // Ads Only: no ticket products, ticket prices or inventory.
+        $capacity_tier = null;
+        $listing_fee_amount = 500;
+        $price = 0.00;
+
+        $regular_price = 0.00;
+        $vip_price = 0.00;
+        $premium_price = 0.00;
+
+        $regular_quantity = null;
+        $vip_quantity = null;
+        $premium_quantity = null;
+
+        $ticket_type_mode = 'none';
+        $total_tickets = null;
+        $ticket_count = null;
     } else {
-        $ticket_type_mode = trim((string)$raw_mode);
-        if (empty($ticket_type_mode)) $ticket_type_mode = 'all';
-    }
-    $regular_price = !empty($_POST['regular_price']) ? floatval($_POST['regular_price']) : 0.00;
-    $vip_price = !empty($_POST['vip_price']) ? floatval($_POST['vip_price']) : 0.00;
-    $premium_price = !empty($_POST['premium_price']) ? floatval($_POST['premium_price']) : 0.00;
-    $regular_quantity = !empty($_POST['regular_quantity']) ? intval($_POST['regular_quantity']) : null;
-    $vip_quantity = !empty($_POST['vip_quantity']) ? intval($_POST['vip_quantity']) : null;
-    $premium_quantity = !empty($_POST['premium_quantity']) ? intval($_POST['premium_quantity']) : null;
-
-    // Handle 'all' mode logic — if 'all' is one of the selected types, apply $price to all tiers
-    if ($ticket_type_mode === 'all' || str_contains($ticket_type_mode, 'all')) {
-        $regular_price = floatval($price);
-        $vip_price = floatval($price);
-        $premium_price = floatval($price);
-    }
-
-    // ── Feature Gate: Paystack Connect required for paid events ─────────────
-    $isPaidEvent = ($price > 0 || $regular_price > 0 || $vip_price > 0 || $premium_price > 0);
-    $activeTicketPrices = [$price];
-    if ($ticket_type_mode !== 'all' && !str_contains($ticket_type_mode, 'all')) {
-        $activeTicketPrices = [];
-        foreach (explode(',', $ticket_type_mode) as $tier) {
-            if ($tier === 'regular') $activeTicketPrices[] = $regular_price;
-            if ($tier === 'vip') $activeTicketPrices[] = $vip_price;
-            if ($tier === 'premium') $activeTicketPrices[] = $premium_price;
+        if (!isset($listingFees[$capacity_tier])) {
+            throw new Exception("Please select a valid ticket-capacity pricing tier.");
         }
+
+        $listing_fee_amount = $listingFees[$capacity_tier];
+
+        $raw_mode = $_POST['ticket_type_mode'] ?? [];
+
+        if (is_array($raw_mode)) {
+            $selectedTiers = array_values(array_unique(array_filter(
+                array_map('trim', $raw_mode),
+                static fn($tier) => in_array($tier, ['regular', 'vip', 'premium'], true)
+            )));
+        } else {
+            $raw_mode = trim((string) $raw_mode);
+
+            $selectedTiers = ($raw_mode === 'all')
+                ? ['regular', 'vip', 'premium']
+                : array_values(array_unique(array_filter(
+                    array_map('trim', explode(',', $raw_mode)),
+                    static fn($tier) => in_array($tier, ['regular', 'vip', 'premium'], true)
+                )));
+        }
+
+        if (!$selectedTiers) {
+            throw new Exception("Select at least one paid ticket type.");
+        }
+
+        $ticket_type_mode = implode(',', $selectedTiers);
+
+        $tierPrices = [
+            'regular' => $regular_price,
+            'vip' => $vip_price,
+            'premium' => $premium_price
+        ];
+
+        foreach ($selectedTiers as $tier) {
+            if ($tierPrices[$tier] <= 0) {
+                throw new Exception(ucfirst($tier) . " ticket price must be greater than zero.");
+            }
+        }
+
+        // Every selected paid ticket type must have positive inventory.
+        $submittedQuantities = [
+            'regular' => $regular_quantity,
+            'vip' => $vip_quantity,
+            'premium' => $premium_quantity
+        ];
+
+        foreach ($selectedTiers as $tier) {
+            if ($submittedQuantities[$tier] === null || $submittedQuantities[$tier] <= 0) {
+                throw new Exception(ucfirst($tier) . " ticket quantity must be greater than zero.");
+            }
+        }
+
+        if (!in_array('regular', $selectedTiers, true)) {
+            $regular_price = 0.00;
+            $regular_quantity = null;
+        }
+        if (!in_array('vip', $selectedTiers, true)) {
+            $vip_price = 0.00;
+            $vip_quantity = null;
+        }
+        if (!in_array('premium', $selectedTiers, true)) {
+            $premium_price = 0.00;
+            $premium_quantity = null;
+        }
+
+        $selectedPrices = array_map(
+            static fn($tier) => $tierPrices[$tier],
+            $selectedTiers
+        );
+
+        $price = min($selectedPrices);
+
+        // No new free events. Historical free events remain supported.
+        $is_free = false;
+
+        // Inventory comes only from selected ticket-tier quantities.
+        // The legacy max_capacity input is deliberately ignored.
+        $total_tickets =
+            ($regular_quantity ?? 0) +
+            ($vip_quantity ?? 0) +
+            ($premium_quantity ?? 0);
+
+        $capacityLimits = [
+            '0-100' => [1, 100],
+            '101-250' => [101, 250],
+            '251-500' => [251, 500],
+            '501-1000' => [501, 1000],
+            '1001-unlimited' => [1001, PHP_INT_MAX]
+        ];
+
+        [$minimumCapacity, $maximumCapacity] = $capacityLimits[$capacity_tier];
+
+        if ($total_tickets < $minimumCapacity || $total_tickets > $maximumCapacity) {
+            throw new Exception(
+                "Combined ticket quantities must fit the selected capacity tier."
+            );
+        }
+
+        $ticket_count = $total_tickets;
     }
-    $is_free = isset($_POST['is_free'])
-        && $_POST['is_free'] === '1'
-        && !empty($activeTicketPrices)
-        && max($activeTicketPrices) <= 0;
+
+    $isPaidEvent = ($listing_type === 'ticketed');
     $paystackStatus = $client_data['paystack_connection_status'] ?? 'disconnected';
-    // if ($isPaidEvent && $paystackStatus !== 'connected') {
-    //     http_response_code(403);
-    //     echo json_encode(['success' => false, 'message' => 'You must connect your Paystack account to create paid events.']);
-    //     exit;
-    // }
 
-    // Compute ticket_count and total_tickets from submitted quantities
-    $total_tickets = null;
-    if (!empty($_POST['max_capacity'])) {
-        $total_tickets = intval($_POST['max_capacity']);
-    } else {
-        $total_tickets = ($regular_quantity ?? 0) + ($vip_quantity ?? 0) + ($premium_quantity ?? 0);
-        if ($total_tickets === 0) $total_tickets = null;
-    }
-    $ticket_count = $total_tickets; // Start at full capacity on creation
-
-    // Private events go live immediately (reachable only through their share
-    // link) — no draft stage, no publish step, no scheduled publish. Draft /
-    // publish / schedule is a public-event-only lifecycle.
+    // Payment must be completed before any new listing can go live.
+    // This applies to private, public and scheduled listings.
     $is_private = ($event_visibility === 'private');
     $status = 'draft';
-    if ($is_private) {
-        $status = 'published';
-        $scheduled_publish_time = null;
-    } elseif (!empty($_POST['status']) && $_POST['status'] === 'published') {
-        $status = 'published';
-    }
 
-    if (empty($scheduled_publish_time)) {
+    if ($is_private) {
         $scheduled_publish_time = null;
-    } else {
-        // Scheduled publishing: an event with a FUTURE publish time stays as a
-        // draft until cron/notify-pre-event.php auto-publishes it at that time
-        // (Lagos local time — the same convention used for all event dates).
-        // A past/equal time publishes immediately.
+    } elseif (!empty($scheduled_publish_time)) {
         try {
             $schedTz = new DateTimeZone('Africa/Lagos');
-            $schedAt = new DateTime((string) $scheduled_publish_time, $schedTz);
-            $schedNow = new DateTime('now', $schedTz);
-            $status = ($schedAt > $schedNow) ? 'draft' : 'published';
+            new DateTime((string) $scheduled_publish_time, $schedTz);
         } catch (Exception $schedEx) {
-            $scheduled_publish_time = null; // Unparsable value — ignore the schedule
+            $scheduled_publish_time = null;
         }
+    } else {
+        $scheduled_publish_time = null;
     }
 
     // Nigerian State Centroid Mapping (Approximate coordinates)
@@ -431,30 +541,38 @@ try {
         }
     }
 
-    // Validate required fields — image is required for ALL events (drafts
-    // included) per design update 2026-09-26.
-    if (
-        empty($event_name) || empty($description) || empty($event_type) ||
-        empty($event_date) || empty($event_time) || empty($phone_contact_1) ||
-        empty($state) || empty($address) || empty($image_path)
-    ) {
-        http_response_code(400);
-        $missing = [];
-        if (empty($event_name))       $missing[] = 'Event Name';
-        if (empty($description))      $missing[] = 'Description';
-        if (empty($event_type))       $missing[] = 'Category';
-        if (empty($event_date))       $missing[] = 'Date';
-        if (empty($event_time))       $missing[] = 'Time';
-        if (empty($phone_contact_1))  $missing[] = 'Primary Contact';
-        if (empty($state))            $missing[] = 'State';
-        if (empty($address))          $missing[] = 'Address';
-        if (empty($image_path))       $missing[] = 'Event Image (Banner)';
+    // EVENTOUT_ADS_ONLY_OPTIONAL_CREATE_V1
+    // Common requirements apply to both listing types.
+    $missing = [];
+    if (empty($event_name))      $missing[] = 'Event Name';
+    if (empty($description))     $missing[] = 'Description';
+    if (empty($event_type))      $missing[] = 'Category';
+    if (empty($phone_contact_1)) $missing[] = 'Primary Contact';
+    if (empty($image_path))      $missing[] = 'Event Image (Banner)';
 
+    // Ticketed events still require a complete location and schedule.
+    if ($listing_type === 'ticketed') {
+        if (empty($event_date)) $missing[] = 'Date';
+        if (empty($event_time)) $missing[] = 'Time';
+        if (empty($state))      $missing[] = 'State';
+        if (empty($address))    $missing[] = 'Address';
+    }
+
+    if (!empty($missing)) {
+        http_response_code(400);
         echo json_encode([
             'success' => false,
             'message' => 'All required fields must be filled: ' . implode(', ', $missing)
         ]);
         exit;
+    }
+
+    // Ads Only stores omitted schedule/state as SQL NULL and address as ''.
+    if ($listing_type === 'ads_only') {
+        $event_date = ($event_date !== '') ? $event_date : null;
+        $event_time = ($event_time !== '') ? $event_time : null;
+        $state = ($state !== '') ? $state : null;
+        $address = trim((string) $address);
     }
 
     // Event name must be text-only: letters (incl. accents), spaces,
@@ -568,13 +686,76 @@ try {
     $pdo->beginTransaction();
     $stmt = $pdo->prepare("
         INSERT INTO events (
-            client_id, custom_id, event_name, description, event_type, event_date, event_time,
-            phone_contact_1, phone_contact_2, state, address, visibility, tag,
-            external_link, price, image_path, status, scheduled_publish_time, 
-            category, event_visibility, ticket_count, total_tickets, 
-            sales_count, view_count, is_boosted,
-            latitude, longitude, metadata, locations, ticket_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            client_id,
+            custom_id,
+            event_name,
+            description,
+            event_type,
+            event_date,
+            event_time,
+            phone_contact_1,
+            phone_contact_2,
+            state,
+            address,
+            visibility,
+            tag,
+            external_link,
+            price,
+            image_path,
+            status,
+            scheduled_publish_time,
+            category,
+            event_visibility,
+            listing_type,
+            capacity_tier,
+            listing_fee_amount,
+            private_fee_amount,
+            ticket_count,
+            total_tickets,
+            sales_count,
+            view_count,
+            is_boosted,
+            latitude,
+            longitude,
+            metadata,
+            locations,
+            ticket_type
+        ) VALUES (
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?,
+            ?
+        )
     ");
 
     $stmt->execute([
@@ -598,6 +779,10 @@ try {
         $scheduled_publish_time,
         $event_type,       // category mirrors event_type
         $event_visibility,
+        $listing_type,
+        $capacity_tier,
+        $listing_fee_amount,
+        $private_fee_amount,
         $ticket_count,     // atomic stock
         $total_tickets,    // original capacity
         0,                 // sales_count starts at 0
@@ -641,6 +826,10 @@ try {
             'tag' => $tag,
             'external_link' => $external_link,
             'status' => $status,
+            'listing_type' => $listing_type,
+            'listing_fee_amount' => $listing_fee_amount,
+            'private_fee_amount' => $private_fee_amount,
+            'payment_required' => true,
             'google_event_id' => $google_event_id
         ]
     ], JSON_INVALID_UTF8_SUBSTITUTE);
