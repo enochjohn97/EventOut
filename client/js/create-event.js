@@ -252,21 +252,36 @@ function showCreateEventModal(eventToEdit = null) {
                                            style="width: 100%; padding: 1rem 1.25rem; border: 2px solid #e5e7eb; border-radius: 12px; font-size: 1rem; background: white; transition: all 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
                                 </div>
 
-                                <!-- FREE checkbox + Visibility - Two column row -->
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                                    <div class="form-group">
-                                        <label style="display: block; font-size: 0.875rem; font-weight: 600; color: #6b7280; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Ticket Pricing</label>
-                                        <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; user-select: none; font-weight: 600; color: #475569; background: white; padding: 1rem 1.25rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border: 2px solid #e5e7eb; height: 56px;">
-                                            <input type="checkbox" id="freeEventCheckbox" name="is_free" value="1" class="state-checkbox-custom"> FREE EVENT
-                                        </label>
-                                    </div>
+                                <!-- Event Listing Option -->
+                                <div class="form-group" style="margin-bottom:1.25rem;">
+                                    <label for="listingTypeSelect" style="display:block;font-size:0.875rem;font-weight:700;color:#475569;margin-bottom:0.6rem;text-transform:uppercase;">
+                                        Listing Option <span style="color:#ef4444">*</span>
+                                    </label>
+                                    <select id="listingTypeSelect" name="listing_type" required
+                                            style="width:100%;padding:1rem 1.25rem;border:2px solid #e5e7eb;border-radius:12px;font-size:1rem;font-weight:600;background:white;color:#374151;">
+                                        <option value="">Choose a listing option</option>
+                                        <option value="ads_only">Ads Only — ₦500</option>
+                                        <option value="ticketed">Ads with Events &amp; Ticketing</option>
+                                    </select>
                                 </div>
 
-                                <!-- Max Capacity (shown only when FREE is checked) -->
-                                <div class="form-group" id="maxCapacityGroup" style="display: none;">
-                                    <label style="display: block; font-size: 0.875rem; font-weight: 600; color: #6b7280; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px;">Max Capacity <span style="color: #ef4444">*</span></label>
-                                    <input type="number" name="max_capacity" id="maxCapacityInput" placeholder="Total tickets available" min="1" 
-                                           style="width: 100%; padding: 1rem 1.25rem; border: 2px solid #e5e7eb; border-radius: 12px; font-size: 1rem; background: white; transition: all 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                                <div id="capacityTierGroup" class="form-group" style="display:none;margin-bottom:1.25rem;">
+                                    <label for="capacityTierSelect" style="display:block;font-size:0.875rem;font-weight:700;color:#475569;margin-bottom:0.6rem;text-transform:uppercase;">
+                                        Ticket Capacity Pricing Bracket <span style="color:#ef4444">*</span>
+                                    </label>
+                                    <select id="capacityTierSelect" name="capacity_tier"
+                                            style="width:100%;padding:1rem 1.25rem;border:2px solid #e5e7eb;border-radius:12px;font-size:1rem;font-weight:600;background:white;color:#374151;">
+                                        <option value="">Choose a capacity bracket</option>
+                                        <option value="0-100">0–100 tickets — ₦1,000</option>
+                                        <option value="101-250">101–250 tickets — ₦1,500</option>
+                                        <option value="251-500">251–500 tickets — ₦2,000</option>
+                                        <option value="501-1000">501–1,000 tickets — ₦2,500</option>
+                                        <option value="1001-unlimited">1,001–Unlimited tickets — ₦3,000</option>
+                                    </select>
+                                </div>
+
+                                <div id="listingFeeNotice" style="padding:1rem 1.25rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:1.5rem;color:#475569;">
+                                    Select a listing option to see the applicable listing fee.
                                 </div>
 
                                 <!-- Ticket Type Configuration -->
@@ -527,16 +542,13 @@ function showCreateEventModal(eventToEdit = null) {
     if (visibilitySelect && eventToEdit.event_visibility)
       visibilitySelect.value = eventToEdit.event_visibility;
 
-    // Private events are always live — re-sync the status field on edit so a
-    // saved private event never falls back to draft.
+    // Preserve the event's saved status. Private events also require payment
+    // before they can be published.
     const prefilledStatusInput = createEventForm.querySelector(
       'input[name="status"]',
     );
     if (prefilledStatusInput) {
-      prefilledStatusInput.value =
-        visibilitySelect && visibilitySelect.value === "private"
-          ? "published"
-          : eventToEdit.status || "draft";
+      prefilledStatusInput.value = eventToEdit.status || "draft";
     }
 
     // Status
@@ -544,16 +556,18 @@ function showCreateEventModal(eventToEdit = null) {
     if (statusSelect && eventToEdit.status)
       statusSelect.value = eventToEdit.status;
 
-    // Free event checkbox
-    const freeCheckbox = document.getElementById("freeEventCheckbox");
-    if (freeCheckbox) {
-      const basePrice = parseFloat(eventToEdit.price) || 0;
-      const isFreeEvent =
-        basePrice === 0 &&
-        !eventToEdit.regular_price &&
-        !eventToEdit.vip_price &&
-        !eventToEdit.premium_price;
-      freeCheckbox.checked = !!eventToEdit.is_free || isFreeEvent;
+    // Restore the event's listing option and capacity bracket.
+    const listingTypeInput = document.getElementById("listingTypeSelect");
+    const capacityTierInput = document.getElementById("capacityTierSelect");
+
+    if (listingTypeInput) {
+      listingTypeInput.value =
+        eventToEdit.listing_type === "ads_only" ? "ads_only" : "ticketed";
+      listingTypeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    if (capacityTierInput) {
+      capacityTierInput.value = eventToEdit.capacity_tier || "";
     }
 
     // Date & Time (global)
@@ -803,85 +817,90 @@ function showCreateEventModal(eventToEdit = null) {
     setTimePickerValue("eventTimePickerContainer", restoredTime);
   }
 
-  // Free Event Checkbox Handler — mutual exclusivity with paid ticket types
-  const freeCheckbox = document.getElementById("freeEventCheckbox");
+  // LISTING_OPTION_CONTROLLER_V1
+  const listingTypeSelect = document.getElementById("listingTypeSelect");
+  const capacityTierSelect = document.getElementById("capacityTierSelect");
+  const capacityTierGroup = document.getElementById("capacityTierGroup");
+  const listingFeeNotice = document.getElementById("listingFeeNotice");
   const ticketConfig = document.getElementById("ticketTypeConfigSection");
-  const _priceInputIds = [
-    "regularPriceInput",
-    "vipPriceInput",
-    "premiumPriceInput",
-  ];
 
-  function _setFreeMode(isFree) {
-    if (ticketConfig) ticketConfig.style.display = isFree ? "none" : "block";
-    _priceInputIds.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.value = isFree ? "0" : "";
-        el.disabled = isFree;
-      }
-    });
-    document.querySelectorAll(".ticket-type-checkbox").forEach((cb) => {
-      cb.disabled = isFree;
-    });
-    if (isFree) {
-      document
-        .querySelectorAll('#ticketTypeConfigSection input[name$="quantity"]')
-        .forEach((i) => {
-          i.value = "";
-        });
-    }
-  }
-
-  // FREE option becomes inaccessible (disabled + dimmed) the moment ANY paid
-  // ticket type (regular/vip/premium/all) is checked.
-  function _setFreeAccessibility() {
-    const anyPaidChecked =
-      document.querySelectorAll(".ticket-type-checkbox:checked").length > 0;
-    const freeLabel = freeCheckbox.closest("label");
-    freeCheckbox.disabled = anyPaidChecked;
-    if (freeLabel) {
-      freeLabel.style.opacity = anyPaidChecked ? "0.45" : "1";
-      freeLabel.style.cursor = anyPaidChecked ? "not-allowed" : "pointer";
-      freeLabel.title = anyPaidChecked
-        ? "Uncheck the selected ticket types to make this event free"
-        : "";
-    }
-  }
-
-  freeCheckbox.addEventListener("change", function () {
-    _setFreeMode(this.checked);
-    if (!this.checked) updateTicketTypeSections();
-  });
-
-  // When any paid ticket type is selected, uncheck Free and lock the option
-  document.querySelectorAll(".ticket-type-checkbox").forEach((cb) => {
-    cb.addEventListener("change", function () {
-      if (this.checked && freeCheckbox.checked) {
-        freeCheckbox.checked = false;
-        _setFreeMode(false);
-      }
-      _setFreeAccessibility();
-    });
-  });
-  _setFreeAccessibility();
-
-  const statusInput = document.querySelector('input[name="status"]');
-  if (statusInput) statusInput.value = "draft";
-
-  // Private events are live the moment they are created (share-link only) —
-  // draft/publish/scheduling is a public-event-only lifecycle.
-  const visibilitySelect = document.getElementById("eventVisibilitySelect");
-  const applyVisibilityStatus = () => {
-    const statusField = document.querySelector('input[name="status"]');
-    if (statusField && visibilitySelect) {
-      statusField.value = visibilitySelect.value === "private" ? "published" : "draft";
-    }
+  const listingFeeLabels = {
+    "0-100": "₦1,000",
+    "101-250": "₦1,500",
+    "251-500": "₦2,000",
+    "501-1000": "₦2,500",
+    "1001-unlimited": "₦3,000",
   };
-  if (visibilitySelect) {
-    visibilitySelect.addEventListener("change", applyVisibilityStatus);
-    applyVisibilityStatus();
+
+  function updateListingControls() {
+    const listingType = listingTypeSelect?.value || "";
+    const isTicketed = listingType === "ticketed";
+    const isAdsOnly = listingType === "ads_only";
+
+    // Ads Only does not require venue, state, date, or time.
+    const locationFields = [
+      document.querySelector('textarea[name="address"]'),
+      document.getElementById("customDateDisplay"),
+      document.getElementById("eventDateInput"),
+      document.getElementById("eventTimeInput"),
+      document.getElementById("eventStateInput"),
+    ];
+    locationFields.forEach((field) => {
+      if (field) field.required = isTicketed;
+    });
+    document.querySelectorAll(
+      "#perStateAddressContainer textarea[data-state]"
+    ).forEach((field) => {
+      field.required = isTicketed;
+    });
+
+    if (capacityTierGroup) {
+      capacityTierGroup.style.display = isTicketed ? "block" : "none";
+    }
+
+    if (capacityTierSelect) {
+      capacityTierSelect.required = isTicketed;
+      capacityTierSelect.disabled = !isTicketed;
+      if (!isTicketed) capacityTierSelect.value = "";
+    }
+
+    if (ticketConfig) {
+      ticketConfig.style.display = isTicketed ? "block" : "none";
+      ticketConfig.querySelectorAll("input").forEach((input) => {
+        input.disabled = !isTicketed;
+      });
+    }
+
+    if (listingFeeNotice) {
+      if (isAdsOnly) {
+        listingFeeNotice.textContent =
+          "Ads Only listing fee: ₦500. Ticket sales and ticket issuance are not available for this listing.";
+      } else if (isTicketed) {
+        const tier = capacityTierSelect?.value || "";
+        listingFeeNotice.textContent = tier
+          ? `Ads with Events & Ticketing listing fee: ${listingFeeLabels[tier]}. Attendee ticket payments are separate.`
+          : "Choose a ticket-capacity bracket to see the listing fee. Attendee ticket payments are separate.";
+      } else {
+        listingFeeNotice.textContent =
+          "Select a listing option to see the applicable listing fee.";
+      }
+    }
+
+    if (typeof updateTicketTypeSections === "function") {
+      updateTicketTypeSections();
+    }
   }
+
+  listingTypeSelect?.addEventListener("change", updateListingControls);
+  capacityTierSelect?.addEventListener("change", updateListingControls);
+
+  // New listings always start as drafts.
+  const statusInput = document.querySelector('input[name="status"]');
+  if (statusInput && !createEventForm.hasAttribute("data-event-id")) {
+    statusInput.value = "draft";
+  }
+
+  updateListingControls();
 
   // Ticket Type Mode Handler — multi-checkbox variant
   const ticketTypeCheckboxes = document.querySelectorAll(
@@ -1305,6 +1324,75 @@ async function handleCreateEventSubmit(e) {
 
   const formData = new FormData(e.target);
 
+  // Validate the selected listing option.
+  const listingType = document.getElementById("listingTypeSelect")?.value || "";
+  const capacityTier = document.getElementById("capacityTierSelect")?.value || "";
+
+  if (!["ads_only", "ticketed"].includes(listingType)) {
+    showNotification("Choose Ads Only or Ads with Events & Ticketing.", "error");
+    document.getElementById("listingTypeSelect")?.focus();
+    return;
+  }
+
+  formData.set("listing_type", listingType);
+
+  if (listingType === "ads_only") {
+    formData.delete("capacity_tier");
+    formData.delete("ticket_type_mode[]");
+
+    ["regular", "vip", "premium"].forEach((tier) => {
+      formData.set(`${tier}_price`, "0");
+      formData.delete(`${tier}_quantity`);
+    });
+  } else {
+    if (!capacityTier) {
+      showNotification("Choose a ticket-capacity pricing bracket.", "error");
+      document.getElementById("capacityTierSelect")?.focus();
+      return;
+    }
+
+    formData.set("capacity_tier", capacityTier);
+
+    const selectedTiers = Array.from(
+      document.querySelectorAll(".ticket-type-checkbox:checked"),
+    ).map((checkbox) => checkbox.value);
+
+    if (selectedTiers.length === 0) {
+      showNotification("Select at least one ticket type.", "error");
+      document.getElementById("ticketTypeConfigSection")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
+
+    for (const tier of selectedTiers) {
+      const rawPrice = String(formData.get(`${tier}_price`) || "").trim();
+      const rawQuantity = String(formData.get(`${tier}_quantity`) || "").trim();
+      const price = Number(rawPrice.replace(/,/g, ""));
+      const quantity = Number(rawQuantity);
+
+      if (!Number.isFinite(price) || price <= 0) {
+        showNotification(
+          `Enter a valid price greater than zero for ${tier.toUpperCase()} tickets.`,
+          "error",
+        );
+        document.getElementById(`${tier}PriceInput`)?.focus();
+        return;
+      }
+
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        showNotification(
+          `Enter a positive whole-number quantity for ${tier.toUpperCase()} tickets.`,
+          "error",
+        );
+        e.target.querySelector(`input[name="${tier}_quantity"]`)?.focus();
+        return;
+      }
+    }
+  }
+
+
   // Event image is REQUIRED for both create and update — an event cannot be
   // saved without a banner.
   const imageInput = document.getElementById("eventImageInput");
@@ -1443,8 +1531,39 @@ async function handleCreateEventSubmit(e) {
     });
     const result = await response.json();
     if (result.success) {
+      const savedEventId = Number(result.event?.id || eventId || 0);
+      const paymentRequired = Boolean(
+        result.payment_required || result.event?.payment_required,
+      );
+
+      if (!savedEventId) {
+        throw new Error(
+          "The event was saved, but its ID was not returned. Refresh your event list before retrying.",
+        );
+      }
+
+      // Keep the draft ID so a payment retry updates the same event.
+      e.target.setAttribute("data-event-id", String(savedEventId));
+
+      if (paymentRequired) {
+        showNotification(
+          "Event saved as a draft. Open its preview to make the listing-fee payment.",
+          "success",
+        );
+
+        clearFormState("createEventForm");
+        closeCreateEventModal();
+
+        if (typeof window.previewEvent === "function") {
+          await window.previewEvent(savedEventId);
+        } else {
+          window.location.reload();
+        }
+        return;
+      }
+
       showNotification(
-        eventId ? "Event updated successfully!" : "Event created successfully!",
+        eventId ? "Event updated successfully!" : "Event saved successfully!",
         "success",
       );
       clearFormState("createEventForm");

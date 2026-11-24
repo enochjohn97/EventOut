@@ -79,6 +79,66 @@ try {
         $event['tier_capacity'] = $tierCapacity;
         $event['tier_remaining'] = $tierRemaining;
 
+        // LISTING_PAYMENT_PREVIEW_STATUS_V1: mirror publish-event.php pricing checks.
+        $fee = (int) ($event['listing_fee_amount'] ?? 0);
+        $privateFee = (int) ($event['private_fee_amount'] ?? 0);
+        $type = (string) ($event['listing_type'] ?? '');
+        $expectedFee = null;
+
+        if ($type === 'ads_only') {
+            $expectedFee = 500;
+        } elseif ($type === 'ticketed') {
+            $fees = [
+                '0-100' => 1000,
+                '101-250' => 1500,
+                '251-500' => 2000,
+                '501-1000' => 2500,
+                '1001-unlimited' => 3000,
+            ];
+            $expectedFee = $fees[(string) ($event['capacity_tier'] ?? '')] ?? null;
+        }
+
+        $grandfathered = (int) $event['id'] === 5
+            && (int) $event['client_id'] === 5
+            && $type === 'ticketed'
+            && (string) ($event['capacity_tier'] ?? '') === '0-100'
+            && $fee === 500
+            && $privateFee === 0;
+
+        $legacyZeroFee = ($fee === 0 && $privateFee === 0);
+        $paymentPaid = $legacyZeroFee;
+
+        if (!$legacyZeroFee && $expectedFee !== null
+            && ($grandfathered || $fee === $expectedFee)
+            && $privateFee === 0) {
+            $paymentSql = "
+                SELECT id
+                FROM event_listing_payments
+                WHERE event_id = ?
+                  AND client_id = ?
+                  AND listing_fee_amount = ?
+                  AND private_fee_amount = 0
+                  AND amount_kobo = ?
+                  AND currency = 'NGN'
+                  AND status = 'paid'
+            ";
+            $paymentParams = [
+                (int) $event['id'],
+                (int) $event['client_id'],
+                $fee,
+                ($fee + $privateFee) * 100
+            ];
+            if ($grandfathered) {
+                $paymentSql .= " AND reference = ?";
+                $paymentParams[] = 'EVLIST_611dd99fd1fdf408a713fa3d92011984';
+            }
+            $paymentStmt = $pdo->prepare($paymentSql);
+            $paymentStmt->execute($paymentParams);
+            $paymentPaid = (bool) $paymentStmt->fetchColumn();
+        }
+
+        $event['listing_payment_paid'] = $paymentPaid;
+
         echo json_encode(['success' => true, 'event' => $event]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Event not found']);
