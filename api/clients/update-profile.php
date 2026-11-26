@@ -95,6 +95,9 @@ if (isset($_POST['bank_code'], $_POST['account_number']) && trim($_POST['bank_co
     ];
 }
 
+$newKycFiles = [];
+$oldKycFiles = [];
+
 try {
     $pdo->beginTransaction();
 
@@ -207,18 +210,20 @@ try {
         if (!is_dir($kyc_dir)) {
             mkdir($kyc_dir, 0775, true);
         }
-        // Delete old KYC file if it exists on disk
-        if (!empty($existing[$field]) && !preg_match('/^(https?:\/\/|data:)/i', $existing[$field])) {
-            $old_kyc = __DIR__ . '/../../' . ltrim($existing[$field], '/');
-            if (file_exists($old_kyc)) {
-                @unlink($old_kyc);
-            }
-        }
-        $safe_kyc_name = $field . '_' . $client_id . '_' . time() . '.' . $extension;
+        $safe_kyc_name = $field . '_' . $client_id . '_' . bin2hex(random_bytes(8)) . '.' . $extension;
         $kyc_target = $kyc_dir . $safe_kyc_name;
         if (!move_uploaded_file($file['tmp_name'], $kyc_target)) {
             throw new RuntimeException('The KYC document could not be saved. Check the uploads/kyc directory permissions.');
         }
+
+        $newKycFiles[] = $kyc_target;
+
+        // Retain the previous document until the database transaction commits.
+        $oldRelative = ltrim((string)($existing[$field] ?? ''), '/');
+        if (preg_match('#^uploads/kyc/[A-Za-z0-9._-]+$#', $oldRelative)) {
+            $oldKycFiles[] = __DIR__ . '/../../' . $oldRelative;
+        }
+
         $kycUpdates[$field] = '/uploads/kyc/' . $safe_kyc_name;
     }
 
@@ -324,6 +329,13 @@ try {
 
     $pdo->commit();
 
+    // Only remove replaced documents after the new paths are committed.
+    foreach (array_unique($oldKycFiles) as $oldFile) {
+        if (is_file($oldFile)) {
+            @unlink($oldFile);
+        }
+    }
+
     try {
         require_once '../utils/notification-helper.php';
         createNotification($client_auth_id, "Your profile has been updated successfully.", 'profile_updated', $client_auth_id, 'client', 'client');
@@ -346,6 +358,13 @@ try {
 
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+
+    // A failed database update must not leave newly uploaded orphan files.
+    foreach ($newKycFiles as $newFile) {
+        if (is_file($newFile)) {
+            @unlink($newFile);
+        }
+    }
     error_log('[Client profile update] ' . $e->getMessage());
     http_response_code($e instanceof RuntimeException ? 422 : 500);
     echo json_encode(['success' => false, 'message' => $e instanceof RuntimeException

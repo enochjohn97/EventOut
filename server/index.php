@@ -427,6 +427,14 @@ if (strpos($uri, '/api/') === 0) {
         $dispatchApi('users/get-profile.php');
     }
 
+    if ($method === 'POST' && $cleanPath === 'payments/initialize-listing-fee') {
+        $dispatchApi('payments/initialize-listing-fee.php');
+    }
+
+    if ($method === 'GET' && $cleanPath === 'payments/listing-fee-status') {
+        $dispatchApi('payments/get-listing-fee-status.php');
+    }
+
     if ($method === 'POST' && $cleanPath === 'payments/initialize') {
         $dispatchApi('payments/initialize.php');
     }

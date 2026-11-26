@@ -25,6 +25,59 @@ require_once __DIR__ . '/../../includes/middleware/auth.php';
 
 require_once __DIR__ . '/../../api/utils/notification-helper.php';
 
+
+/**
+ * Persist a Paystack-confirmed charge without allowing a custom_id collision
+ * to update an unrelated payment row.
+ */
+function persistConfirmedPayment(PDO $pdo, array $order, string $reference, int $quantity, string $ticketType, array $gatewayData): int
+{
+    require_once __DIR__ . '/../../api/utils/id-generator.php';
+    $response = json_encode($gatewayData, JSON_THROW_ON_ERROR);
+    $paymentId = (string) ($gatewayData['id'] ?? '');
+    $transactionId = (string) ($gatewayData['reference'] ?? $reference);
+    $find = $pdo->prepare("SELECT id FROM payments WHERE reference = ? LIMIT 1");
+    $update = $pdo->prepare("
+        UPDATE payments
+        SET status = 'paid',
+            paystack_response = ?,
+            payment_id = ?,
+            transaction_id = ?,
+            paid_at = COALESCE(paid_at, NOW())
+        WHERE id = ? AND reference = ?
+    ");
+
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        $find->execute([$reference]);
+        $existingId = $find->fetchColumn();
+        if ($existingId) {
+            $update->execute([$response, $paymentId, $transactionId, (int) $existingId, $reference]);
+            return (int) $existingId;
+        }
+
+        $customId = generatePaymentId($pdo);
+        $insert = $pdo->prepare("
+            INSERT IGNORE INTO payments
+                (event_id, user_id, custom_id, reference, amount, quantity,
+                 ticket_type, status, paystack_response, payment_id,
+                 transaction_id, paid_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, NOW())
+        ");
+        $insert->execute([
+            $order['event_id'], $order['user_id'], $customId, $reference,
+            $order['amount'], $quantity, $ticketType, $response,
+            $paymentId, $transactionId
+        ]);
+        if ($insert->rowCount() === 1) {
+            return (int) $pdo->lastInsertId();
+        }
+        // INSERT IGNORE may have hit either unique key. Only a matching
+        // reference is eligible for update; otherwise retry with a new ID.
+    }
+
+    throw new RuntimeException('Could not persist confirmed payment by exact reference: ' . $reference);
+}
+
 // Load shared webhook helper (processSuccessfulPayment is defined there)
 // We replicate it inline here to keep the file self-contained.
 
@@ -116,7 +169,7 @@ try {
     // ── Check existing order ─────────────────────────────────────────────────
     $oStmt = $pdo->prepare("
         SELECT o.id, o.payment_status, o.amount, o.event_id, o.user_id, o.organizer_id, o.metadata,
-               e.event_name, e.event_date, e.event_time, e.address, e.location, e.image_path,
+               e.listing_type, e.event_name, e.event_date, e.event_time, e.address, e.location, e.image_path,
                u.name AS user_name, u.phone AS user_phone,
                a.id AS user_auth_accounts_id, a.email AS user_email,
                c.client_auth_id AS organizer_auth_id
@@ -240,8 +293,11 @@ try {
     if (!$result || !($result['status'] ?? false) || $psStatus !== 'success') {
         // Mark as failed if Paystack says it failed
         if ($psStatus === 'failed') {
-            $pdo->prepare("UPDATE orders SET payment_status = 'failed' WHERE transaction_reference = ?")
-                ->execute([$reference]);
+            $pdo->prepare("
+                UPDATE orders
+                SET payment_status = 'failed'
+                WHERE transaction_reference = ? AND payment_status = 'pending'
+            ")->execute([$reference]);
         }
         echo json_encode([
             'success' => false,
@@ -260,13 +316,19 @@ try {
     $claim = $pdo->prepare("
         UPDATE orders
         SET payment_status = 'processing'
-        WHERE id = ? AND payment_status = 'pending'
+        WHERE id = ? AND payment_status IN ('pending', 'failed')
     ");
     $claim->execute([$order['id']]);
     if ($claim->rowCount() === 0) {
-        $current = $pdo->prepare("SELECT payment_status FROM orders WHERE id = ?");
+        $current = $pdo->prepare("
+            SELECT payment_status, fulfillment_status
+            FROM orders
+            WHERE id = ?
+        ");
         $current->execute([$order['id']]);
-        $statusNow = (string) $current->fetchColumn();
+        $currentOrder = $current->fetch(PDO::FETCH_ASSOC) ?: [];
+        $statusNow = (string) ($currentOrder['payment_status'] ?? '');
+        $fulfillmentNow = (string) ($currentOrder['fulfillment_status'] ?? '');
 
         if ($statusNow === 'success') {
             // Webhook finished first
@@ -281,22 +343,49 @@ try {
             exit;
         }
         if ($statusNow === 'processing') {
-            // Webhook is mid-flight — client should poll get-order.php
+            $needsReconciliation = ($fulfillmentNow === 'reconciliation_required');
+            if ($needsReconciliation) {
+                http_response_code(409);
+            }
             echo json_encode([
-                'success'    => true,
-                'status'     => 'processing',
-                'message'    => 'Payment confirmed; tickets are being finalized.',
-                'reference'  => $reference,
+                'success'   => !$needsReconciliation,
+                'status'    => $needsReconciliation
+                    ? 'reconciliation_required'
+                    : 'processing',
+                'message'   => $needsReconciliation
+                    ? 'Payment was received, but ticket issuance requires support review. Keep your payment reference.'
+                    : 'Payment confirmed; tickets are being finalized.',
+                'reference' => $reference,
             ]);
             exit;
         }
-        // 'failed' — but Paystack just confirmed success, so fulfill anyway
-        // (covers a transient webhook failure that mis-marked the order).
+        // Do not fulfil orders in any other state (for example refunded).
+        http_response_code(409);
+        echo json_encode([
+            'success' => false,
+            'status' => $statusNow ?: 'unknown',
+            'message' => 'Payment is confirmed, but this order cannot be claimed for fulfilment. Reconciliation is required.',
+            'reference' => $reference,
+        ]);
+        exit;
     }
 
-    $pdo->beginTransaction();
-
     try {
+        $pdo->beginTransaction();
+
+        // RECONCILIATION_EVENT_LOCK_V1
+        $eventLockStmt = $pdo->prepare("
+            SELECT id, is_flagged, listing_type, ticket_count
+            FROM events
+            WHERE id = ?
+            FOR UPDATE
+        ");
+        $eventLockStmt->execute([$order['event_id']]);
+        $lockedEvent = $eventLockStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$lockedEvent) {
+            throw new RuntimeException('Event missing during confirmed payment fulfilment.');
+        }
+
         $metadata = $result['data']['metadata'] ?? [];
         $quantity = max(1, (int) ($metadata['quantity'] ?? 1));
         $ticket_type = $metadata['ticket_type'] ?? 'regular';
@@ -311,6 +400,69 @@ try {
         $giftRecipientEmail = trim((string) ($dbMeta['gift_recipient_email'] ?? ''));
         $isGift = $giftRecipientUserId > 0 && filter_var($giftRecipientEmail, FILTER_VALIDATE_EMAIL);
         $issuedQuantity = $quantity * ($isGift ? 2 : 1);
+
+        // 3. Handle Payment and Ticket (Idempotent)
+        $tStmt = $pdo->prepare("
+            SELECT t.id, t.barcode, t.user_id
+            FROM tickets t
+            JOIN payments p ON t.payment_id = p.id
+            WHERE p.reference COLLATE utf8mb4_unicode_ci = ?
+        ");
+        $tStmt->execute([$reference]);
+        $existingTickets = $tStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $barcode = null;
+        $allBarcodes = [];
+        $buyerBarcodes = [];
+        $ticketJobReady = false;
+        $processorPath = '';
+
+        if (empty($existingTickets)) {
+        $reconciliationReason = null;
+        if ((int) ($lockedEvent['is_flagged'] ?? 0) === 1) {
+            $reconciliationReason = 'event_flagged';
+        } elseif (($lockedEvent['listing_type'] ?? 'ticketed') === 'ads_only') {
+            $reconciliationReason = 'ads_only_listing';
+        } elseif ($lockedEvent['ticket_count'] !== null
+            && (int) $lockedEvent['ticket_count'] < $issuedQuantity) {
+            $reconciliationReason = 'sold_out';
+        }
+
+        if ($reconciliationReason !== null) {
+            persistConfirmedPayment(
+                $pdo, $order, $reference, $quantity, $ticket_type, $result['data']
+            );
+
+            $pdo->prepare("
+                UPDATE orders
+                SET payment_status = 'processing',
+                    fulfillment_status = 'reconciliation_required',
+                    payment_method = ?,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([
+                $result['data']['channel'] ?? 'card',
+                $order['id']
+            ]);
+
+            $pdo->commit();
+            error_log(
+                '[verify-payment.php] CRITICAL: Confirmed charge requires reconciliation. '
+                . 'reason=' . $reconciliationReason
+                . ' order_id=' . $order['id']
+                . ' reference=' . $reference
+            );
+            http_response_code(409);
+            echo json_encode([
+                'success' => false,
+                'status' => 'reconciliation_required',
+                'message' => 'Your payment was received, but ticket issuance requires support review. Keep your payment reference.',
+                'reference' => $reference
+            ]);
+            exit;
+        }
+        }
+
         $ticketOwners = [[
             'user_id' => (int) $order['user_id'],
             'auth_id' => (int) $order['user_auth_accounts_id'],
@@ -326,48 +478,50 @@ try {
             ];
         }
 
-        // 1. Update order status (now 'processing' from the claim)
-        $pdo->prepare("
-            UPDATE orders SET payment_status = 'success', payment_method = ?, updated_at = NOW()
-            WHERE id = ?
-        ")->execute([$result['data']['channel'] ?? 'card', $order['id']]);
-
+        if (empty($existingTickets)) {
         // 2. Atomic ticket decrement and attendee/sales count increment
         // Ensures we don't oversell even with high concurrency.
         $stmt = $pdo->prepare("
-            UPDATE events 
-            SET ticket_count = CASE WHEN ticket_count IS NULL THEN NULL ELSE ticket_count - ? END, 
-                attendee_count = attendee_count + ?, 
-                sales_count = sales_count + ? 
+            UPDATE events
+            SET ticket_count = CASE WHEN ticket_count IS NULL THEN NULL ELSE ticket_count - ? END,
+                attendee_count = attendee_count + ?,
+                sales_count = sales_count + ?
             WHERE id = ? AND (ticket_count IS NULL OR ticket_count >= ?)
         ");
         $stmt->execute([$issuedQuantity, $issuedQuantity, $issuedQuantity, $order['event_id'], $issuedQuantity]);
 
         if ($stmt->rowCount() === 0) {
-            // Sold out — release claim and record failure
+            // Confirmed charge, but stock could not be reserved: reconcile it.
             $pdo->rollBack();
-            $pdo->prepare("UPDATE orders SET payment_status = 'failed' WHERE id = ?")
-                ->execute([$order['id']]);
-            http_response_code(409); // Conflict
-            echo json_encode(['success' => false, 'message' => 'Event sold out or tickets are no longer available in the requested quantity.']);
+            $pdo->beginTransaction();
+
+            persistConfirmedPayment(
+                $pdo, $order, $reference, $quantity, $ticket_type, $result['data']
+            );
+
+            $pdo->prepare("
+                UPDATE orders
+                SET payment_status = 'processing',
+                    fulfillment_status = 'reconciliation_required',
+                    payment_method = ?,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$result['data']['channel'] ?? 'card', $order['id']]);
+
+            $pdo->commit();
+            error_log('[verify-payment.php] CRITICAL: Stock update failed after confirmed charge; reconciliation required. reference=' . $reference);
+            http_response_code(409);
+            echo json_encode([
+                'success' => false,
+                'status' => 'reconciliation_required',
+                'message' => 'Your payment was received, but ticket issuance requires support review. Keep your payment reference.',
+                'reference' => $reference
+            ]);
             exit;
         }
 
-        // 3. Handle Payment and Ticket (Idempotent)
-        $tStmt = $pdo->prepare("
-            SELECT t.id, t.barcode, t.user_id
-            FROM tickets t 
-            JOIN payments p ON t.payment_id = p.id 
-            WHERE p.reference COLLATE utf8mb4_unicode_ci = ?
-        ");
-        $tStmt->execute([$reference]);
-        $existingTickets = $tStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
 
-        $barcode = null;
-        $allBarcodes = [];
-        $buyerBarcodes = [];
-        $ticketJobReady = false;
-        $processorPath = '';
         if (empty($existingTickets)) {
             require_once __DIR__ . '/../../api/utils/id-generator.php';
             $paymentCustomId = generatePaymentId($pdo);
@@ -445,8 +599,17 @@ try {
                 'quantity'       => $quantity,
                 'selected_locs'  => $selected_locs
             ];
-            
-            $barcode = $barcodes[0]; 
+
+            $barcode = $barcodes[0];
+
+            $pdo->prepare("
+                UPDATE orders
+                SET payment_status = 'success',
+                    fulfillment_status = 'issued',
+                    payment_method = ?,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$result['data']['channel'] ?? 'card', $order['id']]);
             $pdo->commit();
 
             $jobData = [
@@ -484,6 +647,14 @@ try {
             $processorPath = __DIR__ . '/../utils/process-ticket-queue.php';
             $ticketJobReady = true;
         } else {
+            $pdo->prepare("
+                UPDATE orders
+                SET payment_status = 'success',
+                    fulfillment_status = 'issued',
+                    payment_method = ?,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$result['data']['channel'] ?? 'card', $order['id']]);
             $pdo->commit();
             foreach ($existingTickets as $existingTicket) {
                 $allBarcodes[] = $existingTicket['barcode'];
@@ -519,13 +690,98 @@ try {
             include_once $processorPath;
         }
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        // Release the processing claim so a retry can re-process this order
-        $pdo->prepare("UPDATE orders SET payment_status = 'pending' WHERE id = ? AND payment_status = 'processing'")
-            ->execute([$order['id']]);
+        // Preserve the confirmed Paystack charge outside the rolled-back fulfilment transaction.
+        try {
+            require_once __DIR__ . '/../../api/utils/id-generator.php';
+
+            $fallbackData = $result['data'] ?? [];
+            $fallbackReference = (string)($order['transaction_reference'] ?? $reference ?? '');
+            if ($fallbackReference === '') {
+                throw new RuntimeException('Missing reference for confirmed verification charge.');
+            }
+
+            $fallbackQuantity = max(1, (int)($fallbackData['metadata']['quantity'] ?? 1));
+            $fallbackTicketType = (string)($fallbackData['metadata']['ticket_type'] ?? 'regular');
+            $fallbackResponse = json_encode($fallbackData, JSON_THROW_ON_ERROR);
+
+            $findPayment = $pdo->prepare(
+                "SELECT id FROM payments WHERE reference = ? LIMIT 1"
+            );
+
+            $paymentFound = false;
+            for ($attempt = 0; $attempt < 5; $attempt++) {
+                $findPayment->execute([$fallbackReference]);
+                if ($findPayment->fetchColumn()) {
+                    $paymentFound = true;
+                    break;
+                }
+
+                $fallbackCustomId = generatePaymentId($pdo);
+                $insertFallback = $pdo->prepare("
+                    INSERT IGNORE INTO payments
+                        (event_id, user_id, custom_id, reference, amount, quantity,
+                         ticket_type, status, paystack_response, payment_id,
+                         transaction_id, paid_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, NOW())
+                ");
+                $insertFallback->execute([
+                    $order['event_id'],
+                    $order['user_id'],
+                    $fallbackCustomId,
+                    $fallbackReference,
+                    $order['amount'],
+                    $fallbackQuantity,
+                    $fallbackTicketType,
+                    $fallbackResponse,
+                    (string)($fallbackData['id'] ?? ''),
+                    $fallbackReference
+                ]);
+
+                $findPayment->execute([$fallbackReference]);
+                if ($findPayment->fetchColumn()) {
+                    $paymentFound = true;
+                    break;
+                }
+            }
+
+            if (!$paymentFound) {
+                throw new RuntimeException('Could not persist confirmed verification payment by reference.');
+            }
+
+            $pdo->prepare("
+                UPDATE payments
+                SET status = 'paid',
+                    paystack_response = ?,
+                    payment_id = ?,
+                    transaction_id = ?,
+                    paid_at = COALESCE(paid_at, NOW())
+                WHERE reference = ?
+            ")->execute([
+                $fallbackResponse,
+                (string)($fallbackData['id'] ?? ''),
+                $fallbackReference,
+                $fallbackReference
+            ]);
+        } catch (Throwable $ledgerError) {
+            error_log(
+                '[verify-payment.php] CRITICAL: Confirmed charge ledger fallback failed. reference='
+                . ($order['transaction_reference'] ?? '')
+                . ' error=' . $ledgerError->getMessage()
+            );
+        }
+
+        $pdo->prepare("
+            UPDATE orders
+            SET payment_status = 'processing',
+                fulfillment_status = 'reconciliation_required',
+                updated_at = NOW()
+            WHERE id = ? AND payment_status = 'processing'
+        ")->execute([$order['id']]);
+
         throw $e;
     }
 } catch (Throwable $e) {

@@ -108,6 +108,10 @@ if (!$token) {
     }
 }
 
+if (!$token) {
+    $token = $sessionToken;
+}
+
 // Portal is only an expected-role restriction, never proof of identity.
 $expectedRole = in_array($portal, ['admin', 'client', 'user'], true)
     ? $portal

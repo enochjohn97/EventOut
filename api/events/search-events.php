@@ -91,7 +91,7 @@ try {
             OR e.priority LIKE ?
             OR e.description LIKE ?
             OR DATE_FORMAT(e.event_date, '%Y-%m-%d') LIKE ?
-            OR (? = 1 AND $effectivePrice <= 0)
+            OR (? = 1 AND IFNULL(e.listing_type, 'ticketed') = 'ticketed' AND $effectivePrice <= 0)
         )";
         $search_term = "%$q%";
         for ($i = 0; $i < 8; $i++) { // 8 LIKE placeholders above
@@ -148,8 +148,9 @@ try {
 
     // Price — "free" chip plus optional range bounds (base, fee-exclusive).
     $freeOnly = isset($_GET['free']) && $_GET['free'] !== '' && $_GET['free'] !== '0';
+    // ADS_ONLY_FREE_SEARCH_GUARD_V2
     if ($freeOnly) {
-        $where_clauses[] = "$effectivePrice <= 0";
+        $where_clauses[] = "IFNULL(e.listing_type, 'ticketed') = 'ticketed' AND $effectivePrice <= 0";
     }
     $priceMin = (isset($_GET['price_min']) && $_GET['price_min'] !== '') ? (float) $_GET['price_min'] : null;
     $priceMax = (isset($_GET['price_max']) && $_GET['price_max'] !== '') ? (float) $_GET['price_max'] : null;
@@ -269,13 +270,22 @@ try {
             unset($ev['client_profile_pic']);
         }
         if (!empty($ev['image_path'])) {
-            $img = str_replace('\\', '/', $ev['image_path']);
-            if (preg_match('#(/public/.+)$#i', $img, $m)) {
-                $ev['image_path'] = $m[1];
-            } elseif (preg_match('#(public/assets/.+)$#i', $img, $m)) {
-                $ev['image_path'] = '/' . $m[1];
+            $img = trim(str_replace('\\', '/', (string) $ev['image_path']));
+
+            // Keep externally hosted images unchanged.
+            if (preg_match('#^https?://#i', $img)) {
+                $ev['image_path'] = $img;
+                $ev['absolute_image_url'] = $img;
+            } else {
+                if (preg_match('#(/public/.+)$#i', $img, $m)) {
+                    $img = $m[1];
+                } elseif (preg_match('#(public/assets/.+)$#i', $img, $m)) {
+                    $img = '/' . $m[1];
+                }
+
+                $ev['image_path'] = '/' . ltrim($img, '/');
+                $ev['absolute_image_url'] = $baseUrl . $ev['image_path'];
             }
-            $ev['absolute_image_url'] = $baseUrl . $ev['image_path'];
         }
         return $ev;
     }, $events);

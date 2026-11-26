@@ -82,6 +82,8 @@ function renderEvent(event) {
     }
     
     // Handle pricing - robust multi-tier logic
+    // ADS_ONLY_EVENT_DETAIL_V2
+    const isAdsOnly = event.listing_type === 'ads_only';
     let priceText = 'Free';
     const regPrice = parseFloat(event.regular_price || 0);
     const vipPrice = parseFloat(event.vip_price || 0);
@@ -114,10 +116,11 @@ function renderEvent(event) {
         ? 'Regular, VIP, Premium' 
         : modes.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(', ');
         
-    if (typeLabel) {
+    if (typeLabel && !isAdsOnly) {
         priceText = `${priceText} (${typeLabel})`;
     }
     
+    if (isAdsOnly) priceText = 'Advertisement';
     document.getElementById('eventPrice').textContent = priceText;
     
     const hero = document.getElementById('eventHero');
@@ -157,10 +160,12 @@ function renderEvent(event) {
     now.setHours(0, 0, 0, 0); 
     const isPassed = eventDate < now;
     const quantitySection = document.getElementById('ticketQuantitySection');
-    if (quantitySection) quantitySection.style.display = isPassed ? 'none' : '';
+    if (quantitySection) {
+        quantitySection.style.display = (isAdsOnly || isPassed) ? 'none' : '';
+    }
 
     // Create ticket type selector if multiple modes exist
-    if (modes.length > 1 && !modes.includes('all')) {
+    if (!isAdsOnly && modes.length > 1 && !modes.includes('all')) {
         const selectorContainer = document.createElement('div');
         selectorContainer.style.cssText = 'margin: 1.5rem 0; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;';
         selectorContainer.innerHTML = `
@@ -198,13 +203,20 @@ function renderEvent(event) {
         });
     }
 
-    if (isPassed) {
+    if (isAdsOnly) {
+        bookBtn.style.display = 'none';
+        bookBtn.disabled = true;
+        bookBtn.onclick = null;
+    } else if (isPassed) {
+        bookBtn.style.display = '';
         bookBtn.disabled = true;
         bookBtn.style.background = '#9ca3af';
         bookBtn.style.cursor = 'not-allowed';
         bookBtn.style.boxShadow = 'none';
         buyTicketText.textContent = 'Event Concluded';
     } else {
+        bookBtn.style.display = '';
+        bookBtn.disabled = false;
         buyTicketText.textContent = (modes.includes('all') && legacyPrice === 0) ? 'Book Your Spot' : 'Buy Ticket Now';
         bookBtn.onclick = () => {
             const qtyInput = document.getElementById('ticketQuantity');

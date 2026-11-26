@@ -107,7 +107,7 @@ class DeletedEventModal {
                 </div>
                 <div style="background: #f3f4f6; padding: 1rem; border-radius: 10px;">
                     <div style="font-size: 0.75rem; color: #6b7280; font-weight: 600; text-transform: uppercase; margin-bottom: 0.25rem;">Time</div>
-                    <div style="font-weight: 700; color: #374151;">${event.event_time.substring(0, 5)}</div>
+                    <div style="font-weight: 700; color: #374151;">${event.event_time ? String(event.event_time).substring(0, 5) : '—'}</div>
                 </div>
                 <div style="background: #f3f4f6; padding: 1rem; border-radius: 10px;">
                     <div style="font-size: 0.75rem; color: #6b7280; font-weight: 600; text-transform: uppercase; margin-bottom: 0.25rem;">Price</div>

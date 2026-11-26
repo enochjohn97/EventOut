@@ -67,6 +67,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => tryHighlight(), 800);
     }
 
+    // LISTING_PAYMENT_AUTO_PREVIEW_V1
+    // Open the paid event preview only after the event list has finished loading.
+    const previewParams = new URLSearchParams(window.location.search);
+    const previewId = Number.parseInt(previewParams.get("preview") || "0", 10);
+
+    if (previewId > 0) {
+        previewParams.delete("preview");
+        const remainingQuery = previewParams.toString();
+        const cleanUrl = window.location.pathname +
+            (remainingQuery ? "?" + remainingQuery : "") +
+            window.location.hash;
+
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        try {
+            await previewEvent(previewId);
+        } catch (error) {
+            console.error("Could not automatically open the paid event preview:", error);
+        }
+    }
+
     // Initialize create event button
     initCreateEventButton();
 });
@@ -902,7 +923,9 @@ async function previewEvent(eventId) {
                 time: data.event_time,
                 total_tickets: data.total_tickets || 'No Limit',
                 ticket_count: data.ticket_count === null ? '∞' : data.ticket_count,
-                phone: data.phone_contact_1 || 'N/A'
+                phone: data.phone_contact_1 || 'N/A',
+                listing_type: data.listing_type || '',
+                listing_payment_paid: data.listing_payment_paid === true
             };
         } else {
             throw new Error(result.message || 'Event not found');
@@ -1001,7 +1024,7 @@ async function previewEvent(eventId) {
                     <div style="background: #f8fafc; padding: 1.25rem; border-radius: 20px; border: 1px solid #e2e8f0;">
                         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🕒</div>
                         <div style="font-size: 0.65rem; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">Time</div>
-                        <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem;">${time.substring(0, 5)}</div>
+                        <div style="font-weight: 700; color: #1e293b; font-size: 0.9rem;">${time ? String(time).substring(0, 5) : '—'}</div>
                     </div>
                     <div style="background: #f8fafc; padding: 1.25rem; border-radius: 20px; border: 1px solid #e2e8f0;">
                         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💎</div>
@@ -1115,8 +1138,13 @@ async function previewEvent(eventId) {
                             </div>
                         </div>
 
-                        ${(status.toLowerCase() !== 'published' && (event.event_visibility || 'public') !== 'private') ? `
-                            <button onclick="publishEvent(${eventId})" style="width: 100%; padding: 1.25rem; background: #722f37; color: white; border: none; border-radius: 18px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; transition: all 0.3s ease; box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);">
+                        ${status.toLowerCase() !== 'published' ? `
+                            ${event.listing_payment_paid ? '' : `
+                                <button onclick="initializeEventListingPayment(${eventId})" style="width: 100%; padding: 1.1rem; margin-bottom: 12px; background: #0f766e; color: white; border: none; border-radius: 18px; font-weight: 800; cursor: pointer;">
+                                    💳 Make Payment
+                                </button>
+                            `}
+                            <button ${event.listing_payment_paid ? '' : 'disabled title="Complete and verify the listing-fee payment first"'} onclick="publishEvent(${eventId}, ${event.event_visibility === 'private' ? 'true' : 'false'})" style="width: 100%; padding: 1.25rem; background: ${event.listing_payment_paid ? '#722f37' : '#9ca3af'}; color: white; border: none; border-radius: 18px; font-weight: 800; cursor: ${event.listing_payment_paid ? 'pointer' : 'not-allowed'}; opacity: ${event.listing_payment_paid ? '1' : '0.7'}; display: flex; align-items: center; justify-content: center; gap: 12px;">
                                 🚀 Publish Event Now
                             </button>
                         ` : ''}
@@ -1134,12 +1162,35 @@ async function previewEvent(eventId) {
     }, 10);
 }
 
-async function publishEvent(eventId) {
+async function initializeEventListingPayment(eventId) {
+    const paymentForm = new FormData();
+    paymentForm.append('event_id', String(eventId));
+
+    try {
+        const response = await apiFetch('/api/payments/initialize-listing-fee.php', {
+            method: 'POST',
+            body: paymentForm
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success || !result.authorization_url) {
+            throw new Error(result.message || 'Could not initialize listing-fee payment.');
+        }
+
+        window.location.assign(result.authorization_url);
+    } catch (error) {
+        showNotification(error.message || 'Could not initialize payment.', 'error');
+    }
+}
+
+async function publishEvent(eventId, isPrivate = false) {
     if (document.activeElement) document.activeElement.blur();
 
     const confirmed = await Swal.fire({
         title: 'Publish Event?',
-        text: 'Are you sure you want to publish this event? It will be visible to all users on the platform.',
+        text: isPrivate
+            ? 'Are you sure you want to publish this private event? It will remain accessible only through its private link.'
+            : 'Are you sure you want to publish this event? It will be visible to all users on the platform.',
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#722f37',
@@ -1201,6 +1252,7 @@ window.editEvent = editEvent;
 window.previewEvent = previewEvent;
 window.deleteEvent = deleteEvent;
 window.publishEvent = publishEvent;
+window.initializeEventListingPayment = initializeEventListingPayment;
 function showLockedNotification(action) {
     Swal.fire({
         title: 'Event Locked',

@@ -284,4 +284,27 @@ class ClientApiService {
     }
     return int.tryParse(data['event_id']?.toString() ?? '') ?? 0;
   }
+
+  static int? pendingListingFeeEventId;
+
+  /// Reads the latest listing-fee payment status for this client's event.
+  static Future<Map<String, dynamic>> getListingFeeStatus(int eventId) async {
+    await ClientSession.refresh();
+    final response = await _send(
+      () => _dio.get(
+        '/payments/listing-fee-status',
+        queryParameters: {'event_id': eventId},
+        options: _options(),
+      ),
+      retried: true,
+    );
+    final data = _toMap(response.data);
+    if (data['success'] != true) {
+      throw ApiException(
+        data['message']?.toString() ?? 'Could not check listing-fee payment.',
+      );
+    }
+    return data;
+  }
+
 }

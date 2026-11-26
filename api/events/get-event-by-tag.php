@@ -37,9 +37,17 @@ try {
             $event['absolute_image_url'] = null;
             unset($event['metadata'], $event['client_profile_pic']);
         } elseif (!empty($event['image_path'])) {
-            $path = '/' . ltrim($event['image_path'], '/');
-            $event['image_path'] = $path;
-            $event['absolute_image_url'] = $baseUrl . $path;
+            $path = trim(str_replace('\\', '/', (string) $event['image_path']));
+
+            // Keep externally hosted images unchanged.
+            if (preg_match('#^https?://#i', $path)) {
+                $event['image_path'] = $path;
+                $event['absolute_image_url'] = $path;
+            } else {
+                $path = '/' . ltrim($path, '/');
+                $event['image_path'] = $path;
+                $event['absolute_image_url'] = $baseUrl . $path;
+            }
         } else {
             $event['image_path'] = null;
             // Local splash placeholder (allowed) — no external dummy image

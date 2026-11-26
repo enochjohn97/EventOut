@@ -30,7 +30,80 @@ window.updateEventOnDashboard = function (updatedEvent) {
   loadDashboardStats();
 };
 
+// LISTING_PAYMENT_RETURN_HANDLER_V1
+window.handleListingPaymentReturn = async function () {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get("listing_payment");
+
+  if (!result) return;
+
+  const eventId = Number.parseInt(params.get("event_id") || "0", 10);
+
+  // Remove callback parameters immediately so refreshes do not repeat the alert.
+  params.delete("listing_payment");
+  params.delete("event_id");
+
+  const remainingQuery = params.toString();
+  const cleanUrl =
+    window.location.pathname +
+    (remainingQuery ? "?" + remainingQuery : "") +
+    window.location.hash;
+
+  window.history.replaceState({}, document.title, cleanUrl);
+
+  if (result === "success") {
+    const response = await Swal.fire({
+      icon: "success",
+      title: "Listing Payment Confirmed",
+      text: "Your listing fee has been verified. Your event is still a draft; publish it when you are ready.",
+      confirmButtonText: "View My Event",
+      confirmButtonColor: "#722f37",
+      allowOutsideClick: false
+    });
+
+    if (response.isConfirmed && eventId > 0) {
+      window.location.href =
+        "/client/events.html?highlight=" + encodeURIComponent(eventId) +
+        "&preview=" + encodeURIComponent(eventId);
+    } else if (response.isConfirmed) {
+      window.location.href = "/client/events.html";
+    }
+
+    return;
+  }
+
+  const messages = {
+    invalid_reference: "The payment reference is invalid. Please return to your events and check the payment status.",
+    payment_not_found: "We could not find this listing payment. Please contact support before trying again.",
+    not_pending: "This payment is no longer pending. Please refresh your events and check its status.",
+    configuration_mismatch: "The event's saved listing configuration does not match this payment. Please contact support.",
+    amount_mismatch: "The payment amount does not match the required listing fee. The event has not been unlocked.",
+    verification_unavailable: "Payment verification is temporarily unavailable. Please try again later.",
+    verification_pending: "Paystack has not yet confirmed this payment. Please wait and check your event before attempting another payment.",
+    payment_not_confirmed: "Paystack did not confirm a successful payment. Your event remains unpublished.",
+    payment_state_changed: "The payment status changed during verification. Refresh your events to check the latest status.",
+    verification_error: "We could not complete payment verification. Please contact support before making another payment."
+  };
+
+  await Swal.fire({
+    icon: "warning",
+    title: "Listing Payment Not Confirmed",
+    text: messages[result] || "The listing payment could not be confirmed. Please check your events or contact support.",
+    confirmButtonText: "View My Events",
+    confirmButtonColor: "#722f37"
+  });
+
+  window.location.href = eventId > 0
+    ? "/client/events.html?highlight=" + encodeURIComponent(eventId)
+    : "/client/events.html";
+};
+
 document.addEventListener("DOMContentLoaded", async () => {
+  // Process a Paystack listing-payment callback before normal dashboard loading.
+  if (typeof window.handleListingPaymentReturn === "function") {
+    await window.handleListingPaymentReturn();
+  }
+
   const sidebar = document.querySelector(".sidebar");
   const mainLayout = document.querySelector(".main-layout");
   const sidebarToggle = document.getElementById("sidebarToggle");

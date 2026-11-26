@@ -66,7 +66,7 @@ try {
             $params[] = $archivedClientId;
         }
         $aStmt = $pdo->prepare("
-            SELECT e.id, e.custom_id, e.event_name, e.event_date, e.event_time, e.price, e.metadata,
+            SELECT e.id, e.custom_id, e.event_name, e.event_date, e.event_time, e.price, e.listing_type, e.metadata,
                    e.state, e.address, e.location, e.category, e.attendee_count, e.max_capacity,
                    e.status, e.created_at, e.deleted_at, e.image_path,
                    c.business_name AS organizer_name, c.name AS organizer_contact,
@@ -370,6 +370,69 @@ try {
     $stmt->execute();
     $events = $stmt->fetchAll();
 
+    // Listing-payment status is exposed only to the authenticated owner's dashboard.
+    // Match against the event's CURRENT fees and owner; never expose payment references.
+    if ($is_dashboard && !empty($events)) {
+        $paymentEventIds = array_values(array_unique(array_filter(
+            array_map(fn($event) => (int) ($event['id'] ?? 0), $events)
+        )));
+
+        if (!empty($paymentEventIds)) {
+            $paymentIn = implode(',', array_fill(0, count($paymentEventIds), '?'));
+
+            $paymentStmt = $pdo->prepare("
+                SELECT p.event_id, p.status, p.id, p.created_at
+                FROM event_listing_payments p
+                INNER JOIN events e
+                    ON e.id = p.event_id
+                   AND e.client_id = p.client_id
+                WHERE p.event_id IN ($paymentIn)
+                  AND p.listing_fee_amount = IFNULL(e.listing_fee_amount, 0)
+                  AND p.private_fee_amount = IFNULL(e.private_fee_amount, 0)
+                  AND p.amount_kobo =
+                      (IFNULL(e.listing_fee_amount, 0) +
+                       IFNULL(e.private_fee_amount, 0)) * 100
+                ORDER BY p.created_at DESC, p.id DESC
+            ");
+            $paymentStmt->execute($paymentEventIds);
+
+            $paymentByEvent = [];
+            $paidByEvent = [];
+
+            foreach ($paymentStmt->fetchAll(PDO::FETCH_ASSOC) as $payment) {
+                $eventId = (int) $payment['event_id'];
+                $paymentStatus = strtolower((string) $payment['status']);
+
+                if (!isset($paymentByEvent[$eventId])) {
+                    $paymentByEvent[$eventId] = $paymentStatus;
+                }
+
+                if ($paymentStatus === 'paid') {
+                    $paidByEvent[$eventId] = true;
+                }
+            }
+
+            foreach ($events as &$event) {
+                $eventId = (int) ($event['id'] ?? 0);
+                $fee = (int) ($event['listing_fee_amount'] ?? 0);
+                $privateFee = (int) ($event['private_fee_amount'] ?? 0);
+
+                if ($fee + $privateFee <= 0) {
+                    $event['listing_paid'] = true;
+                    $event['listing_payment_status'] = 'paid';
+                } elseif (!empty($paidByEvent[$eventId])) {
+                    $event['listing_paid'] = true;
+                    $event['listing_payment_status'] = 'paid';
+                } else {
+                    $status = $paymentByEvent[$eventId] ?? 'unpaid';
+                    $event['listing_paid'] = false;
+                    $event['listing_payment_status'] = $status;
+                }
+            }
+            unset($event);
+        }
+    }
+
     // Per-tier capacity for the events on this page. Two bulk queries keep the
     // list endpoint free of N+1 lookups; the checkout screen shows the live
     // remaining count per tier (regular / vip / premium).
@@ -442,13 +505,22 @@ try {
         // PHP built-in server serves them directly — so /public/assets/... works
         // on both. absolute_image_url is the full resolvable URL for clients.
         if (!empty($ev['image_path'])) {
-            $img = str_replace('\\', '/', $ev['image_path']);
-            if (preg_match('#(/public/.+)$#i', $img, $m)) {
-                $ev['image_path'] = $m[1];
-            } elseif (preg_match('#(public/assets/.+)$#i', $img, $m)) {
-                $ev['image_path'] = '/' . $m[1];
+            $img = trim(str_replace('\\', '/', (string) $ev['image_path']));
+
+            // Keep externally hosted images unchanged.
+            if (preg_match('#^https?://#i', $img)) {
+                $ev['image_path'] = $img;
+                $ev['absolute_image_url'] = $img;
+            } else {
+                if (preg_match('#(/public/.+)$#i', $img, $m)) {
+                    $img = $m[1];
+                } elseif (preg_match('#(public/assets/.+)$#i', $img, $m)) {
+                    $img = '/' . $m[1];
+                }
+
+                $ev['image_path'] = '/' . ltrim($img, '/');
+                $ev['absolute_image_url'] = $baseUrl . $ev['image_path'];
             }
-            $ev['absolute_image_url'] = $baseUrl . $ev['image_path'];
         }
         return $ev;
     }, $events);

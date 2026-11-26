@@ -25,35 +25,25 @@ try {
 }
 
 $data = json_decode(file_get_contents("php://input"), true);
-$email = $data['email'] ?? $data['identity'] ?? null;
+$email = trim((string) ($data['email'] ?? $data['identity'] ?? ''));
 
-if (!$email || !validateEmail($email)) {
-    // If it's a valid string but filter_var failed, we might still want to try it if it looks like an email
-    // but for now let's just ensure we support both identity and email keys.
-    if (!$email) {
-        echo json_encode(['success' => false, 'message' => 'Email address is required.']);
-        exit;
-    }
+if ($email === '' || !validateEmail($email)) {
+    echo json_encode(['success' => false, 'message' => 'A valid email address is required.']);
+    exit;
 }
 
+
 try {
-    // Check if email exists in auth_accounts (Users and Clients)
+    // Password recovery is available to active, non-deleted client accounts only.
     $stmt = $pdo->prepare("
-        SELECT a.id, a.role, a.email,
-               CASE 
-                   WHEN a.role = 'client' THEN c.name 
-                   WHEN a.role = 'user' THEN u.name 
-                   ELSE a.username 
-               END as name,
-               CASE 
-                   WHEN a.role = 'client' THEN c.phone 
-                   WHEN a.role = 'user' THEN u.phone 
-                   ELSE NULL 
-               END as phone
+        SELECT a.id, a.role, a.email, c.name, c.phone
         FROM auth_accounts a
-        LEFT JOIN clients c ON a.id = c.client_auth_id AND a.role = 'client'
-        LEFT JOIN users u ON a.id = u.user_auth_id AND a.role = 'user'
-        WHERE a.email = ? AND a.deleted_at IS NULL
+        INNER JOIN clients c ON c.client_auth_id = a.id
+        WHERE a.email = ?
+          AND a.role = 'client'
+          AND a.is_active = 1
+          AND a.deleted_at IS NULL
+          AND c.deleted_at IS NULL
         LIMIT 1
     ");
     $stmt->execute([$email]);

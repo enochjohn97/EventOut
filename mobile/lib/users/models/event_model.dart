@@ -5,6 +5,7 @@ class EventModel {
   final String? description;
   final String? category;
   final String? eventType;
+  final String? listingType;
   final String? eventDate;
   final String? eventTime;
   final String? address;
@@ -46,6 +47,7 @@ class EventModel {
     this.description,
     this.category,
     this.eventType,
+    this.listingType,
     this.eventDate,
     this.eventTime,
     this.address,
@@ -129,6 +131,7 @@ class EventModel {
       description: json['description']?.toString(),
       category: json['category']?.toString(),
       eventType: json['event_type']?.toString(),
+      listingType: json['listing_type']?.toString(),
       eventDate: json['event_date']?.toString(),
       eventTime: json['event_time']?.toString(),
       address: json['address']?.toString(),

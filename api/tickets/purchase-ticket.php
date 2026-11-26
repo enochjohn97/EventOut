@@ -91,6 +91,33 @@ try {
         exit;
     }
 
+    // FLAGGED_EVENT_DIRECT_PURCHASE_GUARD_V1
+    // The event row is locked above; never allow purchases while admin review is active.
+    if ((int) ($event['is_flagged'] ?? 0) === 1) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode([
+            'success' => false,
+            'status' => 'event_flagged',
+            'message' => 'This event is temporarily unavailable while it is under admin review.'
+        ]);
+        exit;
+    }
+
+    // Read the database value before metadata merging can override event fields.
+    $databaseListingType = $event['listing_type'] ?? 'ticketed';
+
+    // LISTING_TYPE_DIRECT_PURCHASE_GUARD_V1
+    if ($databaseListingType === 'ads_only') {
+        $pdo->rollBack();
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'message' => 'This listing is Ads Only and does not offer ticket purchases.'
+        ]);
+        exit;
+    }
+
     // Merge metadata if present
     if (!empty($event['metadata'])) {
         $meta = json_decode($event['metadata'], true);

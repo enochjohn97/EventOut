@@ -304,7 +304,7 @@ try {
 
     // ── Fetch event + organizer Paystack Connect details ───────────────────────
     $eStmt = $pdo->prepare("
-        SELECT e.id, e.event_name, e.price, e.status, e.max_capacity, e.attendee_count,
+        SELECT e.id, e.event_name, e.price, e.status, e.listing_type, e.is_flagged, e.max_capacity, e.attendee_count,
                e.event_date, e.event_time, e.state, e.address, e.location, e.image_path,
                e.metadata, c.metadata AS organizer_metadata, e.client_id AS organizer_id,
                c.subaccount_code, c.verification_status, c.business_name AS organizer_business_name, c.name AS organizer_name,
@@ -318,6 +318,10 @@ try {
     $eStmt->execute([$event_id]);
     $event = $eStmt->fetch(PDO::FETCH_ASSOC);
 
+    // Preserve database-controlled values before metadata is merged.
+    $databaseListingType = $event['listing_type'] ?? 'ticketed';
+    $databaseIsFlagged = (int) ($event['is_flagged'] ?? 0) === 1;
+
     if ($event && !empty($event['metadata'])) {
         $meta = json_decode($event['metadata'], true);
         if (is_array($meta)) {
@@ -330,6 +334,17 @@ try {
         exit;
     }
 
+    // FLAGGED_EVENT_INITIALIZE_GUARD_V1
+    if ($databaseIsFlagged) {
+        http_response_code(409);
+        echo json_encode([
+            'success' => false,
+            'status' => 'event_flagged',
+            'message' => 'This event is temporarily unavailable while it is under admin review.'
+        ]);
+        exit;
+    }
+
     $organizerMetadata = json_decode($event['organizer_metadata'] ?? '{}', true);
     $event['paystack_account_status'] = is_array($organizerMetadata)
         ? ($organizerMetadata['paystack_account_status'] ?? '')
@@ -339,6 +354,19 @@ try {
         echo json_encode(['success' => false, 'message' => 'This event is not available for booking.']);
         exit;
     }
+
+    // LISTING_TYPE_ATTENDEE_CHECKOUT_GUARD_V1
+    // Ads Only listings cannot enter paid, bank-transfer, or free-ticket checkout.
+    // Historical free events remain supported when their listing_type is ticketed.
+    if ($databaseListingType === 'ads_only') {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'message' => 'This listing is Ads Only and does not offer ticket purchases.'
+        ]);
+        exit;
+    }
+
     $issuedQuantity = $quantity * ($giftRecipient ? 2 : 1);
 
     $paystackAccountStatus = strtolower(trim((string)($event['paystack_account_status'] ?? '')));

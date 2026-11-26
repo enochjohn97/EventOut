@@ -26,6 +26,15 @@ if (!$event_id) {
 }
 
 try {
+    // EVENT_PUBLISH_TRANSACTION_GUARD_V4
+    // Lock the event before validating payment and publishing.
+    $pdo->beginTransaction();
+    register_shutdown_function(static function () use ($pdo) {
+        if ($pdo instanceof PDO && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+    });
+
     // Use user_id directly (it is client_id from clientMiddleware)
     $resolved_client_id = $user_id;
 
@@ -41,7 +50,9 @@ try {
         $params[] = $resolved_client_id;
     }
 
-    $stmt = $pdo->prepare($sql);
+    $sql .= " FOR UPDATE";
+
+      $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $event = $stmt->fetch();
 
@@ -59,16 +70,102 @@ try {
         exit;
     }
 
-    // Private events are live from creation through their share link — they
-    // have no draft/publish lifecycle. Only public events get published.
-    if (($event['event_visibility'] ?? 'public') === 'private') {
-        ob_end_clean();
-        echo json_encode(['success' => false, 'message' => "Private events are live immediately via their share link — there's nothing to publish."]);
-        exit;
-    }
+    // LISTING_PAYMENT_PUBLISH_GUARD_V2
+    // Validate the server-side fee schedule before allowing publication.
+    $requiredListingFee = (int) ($event['listing_fee_amount'] ?? 0);
+    $requiredPrivateFee = (int) ($event['private_fee_amount'] ?? 0);
+    $requiredTotalFee = $requiredListingFee + $requiredPrivateFee;
 
+    // Existing zero-fee legacy events remain publishable.
+    $legacyZeroFeeEvent = ($requiredListingFee === 0 && $requiredPrivateFee === 0);
+
+    if (!$legacyZeroFeeEvent) {
+        $expectedListingFee = null;
+        $listingType = (string) ($event['listing_type'] ?? '');
+
+        if ($listingType === 'ads_only') {
+            $expectedListingFee = 500;
+        } elseif ($listingType === 'ticketed') {
+            $ticketFees = [
+                '0-100' => 1000,
+                '101-250' => 1500,
+                '251-500' => 2000,
+                '501-1000' => 2500,
+                '1001-unlimited' => 3000,
+            ];
+
+            $tier = (string) ($event['capacity_tier'] ?? '');
+            if (isset($ticketFees[$tier])) {
+                $expectedListingFee = $ticketFees[$tier];
+            }
+        }
+
+        // Only the exact existing Event 5 payment retains its legacy ₦500 fee.
+        $isGrandfatheredEvent5 =
+            (int) $event['id'] === 5 &&
+            (int) $event['client_id'] === 5 &&
+            $listingType === 'ticketed' &&
+            (string) ($event['capacity_tier'] ?? '') === '0-100' &&
+            $requiredListingFee === 500 &&
+            $requiredPrivateFee === 0;
+
+        if (
+            $expectedListingFee === null ||
+            (!$isGrandfatheredEvent5 && $requiredListingFee !== $expectedListingFee) ||
+            $requiredPrivateFee !== 0
+        ) {
+            http_response_code(409);
+            ob_end_clean();
+            echo json_encode([
+                'success' => false,
+                'payment_required' => true,
+                'message' => 'The saved listing fee does not match the current pricing rules. Please contact support.'
+            ]);
+            exit;
+        }
+
+        $paymentSql = "
+            SELECT id
+            FROM event_listing_payments
+            WHERE event_id = ?
+              AND client_id = ?
+              AND listing_fee_amount = ?
+              AND private_fee_amount = 0
+              AND amount_kobo = ?
+              AND currency = 'NGN'
+              AND status = 'paid'
+        ";
+
+        $paymentParams = [
+            (int) $event['id'],
+            (int) $event['client_id'],
+            $requiredListingFee,
+            $requiredTotalFee * 100
+        ];
+
+        if ($isGrandfatheredEvent5) {
+            $paymentSql .= " AND reference = ?";
+            $paymentParams[] = 'EVLIST_611dd99fd1fdf408a713fa3d92011984';
+        }
+
+        $paymentSql .= " ORDER BY id DESC LIMIT 1 FOR UPDATE";
+
+        $paymentCheck = $pdo->prepare($paymentSql);
+        $paymentCheck->execute($paymentParams);
+
+        if (!$paymentCheck->fetchColumn()) {
+            http_response_code(402);
+            ob_end_clean();
+            echo json_encode([
+                'success' => false,
+                'payment_required' => true,
+                'message' => 'Your listing payment has not been verified. Please complete the listing payment before publishing this event.'
+            ]);
+            exit;
+        }
+    }
     // Begin transaction
-    $pdo->beginTransaction();
+    // Transaction already started before the authoritative event read.
 
     // Update event status to published
     $sql = "UPDATE events SET status = 'published' WHERE id = ?";
@@ -105,6 +202,8 @@ try {
         error_log("[Publish Event Notification Error] " . $notif_err->getMessage());
     }
 
+    // Private events must never be broadcast to the general user population.
+    if (($event['event_visibility'] ?? 'public') !== 'private') {
     // ── Fan out to every user: in-app notification (mobile/web bell) + email ──
     // Mirrors the published-event fan-out in create-event.php so publishing a
     // draft reaches users exactly like creating a published event does.
@@ -181,6 +280,7 @@ try {
         error_log("[Publish Event] FCM push failed: " . $push_err->getMessage());
     }
 
+    }
     ob_end_clean();
     echo json_encode([
         'success' => true,

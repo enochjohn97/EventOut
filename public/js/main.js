@@ -932,6 +932,8 @@ function escapeHTML(str) {
 
 // Create event card
 function createEventCard(event, index) {
+  // ADS_ONLY_HOMEPAGE_V2
+  const isAdsOnly = event.listing_type === 'ads_only';
   // Handle pricing - prefer new fields if available
   // Handle pricing - robust multi-tier logic
   let price = "Free";
@@ -975,9 +977,11 @@ function createEventCard(event, index) {
       ? "Regular, VIP, Premium"
       : modes.map((m) => m.charAt(0).toUpperCase() + m.slice(1)).join(", ");
 
-  if (typeLabel) {
+  if (typeLabel && !isAdsOnly) {
     price = `${price} <span class="ticket-type-label" style="font-size: 0.75rem; color: #6b7280; font-weight: 500;">(${typeLabel})</span>`;
   }
+
+  if (isAdsOnly) price = 'Advertisement';
 
   // Security: Sanitize and Path Priority
   const eventImage =
@@ -1484,6 +1488,7 @@ function getFilteredEvents(events, filters) {
     const getNumPrice = (v) =>
       parseFloat((v || "0").toString().replace(/[^0-9.]/g, "")) || 0;
     const isFree =
+      event.listing_type !== 'ads_only' &&
       getNumPrice(event.price) === 0 &&
       getNumPrice(event.regular_price) === 0 &&
       getNumPrice(event.vip_price) === 0 &&
@@ -2155,11 +2160,17 @@ function showEventModal(eventId) {
       `${window.location.origin}/index.html?event_id=${event.id}`;
 
   const applyFee = (p) => (p > 0 ? Math.round(p * 1.1) : 0);
+  const isAdsOnly = event.listing_type === "ads_only";
   const legacyPrice = parseFloat(event.price || 0);
-  const modalPrice =
-    !legacyPrice || legacyPrice === 0
-      ? "Free"
-      : `₦${applyFee(legacyPrice).toLocaleString()}`;
+  const modalPrice = isAdsOnly
+    ? "Advertisement"
+    : (!legacyPrice || legacyPrice === 0
+        ? "Free"
+        : `₦${applyFee(legacyPrice).toLocaleString()}`);
+  const modalPriceLabel = document.querySelector(".event-price-label");
+  if (modalPriceLabel) {
+    modalPriceLabel.textContent = isAdsOnly ? "Listing Type" : "Ticket Price";
+  }
   if (document.getElementById("modalEventPrice"))
     document.getElementById("modalEventPrice").textContent = modalPrice;
 
@@ -2225,6 +2236,12 @@ function showEventModal(eventId) {
     }
   }
 
+  // Ads Only listings do not offer ticket types.
+  if (isAdsOnly) {
+    const adsTicketSection = document.getElementById("ticketTypeSection");
+    if (adsTicketSection) adsTicketSection.style.display = "none";
+  }
+
   // Fix: Force local time to avoid UTC midnight timezone shift on isPassed check
   const isPassed =
     new Date(event.event_date + "T00:00:00") <
@@ -2232,7 +2249,7 @@ function showEventModal(eventId) {
 
   const quantitySection = document.querySelector(".event-quantity-section");
   if (quantitySection) {
-    quantitySection.style.display = isPassed ? "none" : "flex";
+    quantitySection.style.display = (isAdsOnly || isPassed) ? "none" : "flex";
   }
 
   // Priority badge
@@ -2262,13 +2279,19 @@ function showEventModal(eventId) {
   // Buy ticket button logic
   const buyTicketBtn = document.getElementById("bookNowBtn");
   if (buyTicketBtn) {
-    if (isPassed) {
+    if (isAdsOnly) {
+      buyTicketBtn.style.display = "none";
+      buyTicketBtn.disabled = true;
+      buyTicketBtn.onclick = null;
+    } else if (isPassed) {
+      buyTicketBtn.style.display = "";
       buyTicketBtn.textContent = "Event Ended";
       buyTicketBtn.disabled = true;
       buyTicketBtn.style.background = "#6b7280";
       buyTicketBtn.style.cursor = "not-allowed";
       buyTicketBtn.onclick = null;
     } else {
+      buyTicketBtn.style.display = "";
       buyTicketBtn.textContent = "Get Tickets";
       buyTicketBtn.disabled = false;
       buyTicketBtn.style.background = ""; // Revert to default

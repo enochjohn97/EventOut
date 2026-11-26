@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/client_auth_provider.dart';
 import '../providers/client_data_provider.dart';
-import '../widgets/client_detail_sheets.dart';
+import '../services/client_api_service.dart';
 import '../widgets/create_event_sheet.dart';
 import 'client_events_screen.dart';
 import 'client_home_screen.dart';
@@ -48,9 +48,63 @@ class _ClientShellScreenState extends State<ClientShellScreen>
     super.dispose();
   }
 
+  bool _checkingListingFee = false;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _load(force: true);
+    if (state == AppLifecycleState.resumed) {
+      _load(force: true);
+      _checkPendingListingFee();
+    }
+  }
+
+  Future<void> _checkPendingListingFee() async {
+    final eventId = ClientApiService.pendingListingFeeEventId;
+    if (eventId == null || _checkingListingFee || !mounted) return;
+
+    _checkingListingFee = true;
+    try {
+      final result = await ClientApiService.getListingFeeStatus(eventId);
+      if (!mounted) return;
+
+      final status = result['payment_status']?.toString().toLowerCase();
+      if (status == 'paid') {
+        ClientApiService.pendingListingFeeEventId = null;
+        await _load(force: true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Listing fee payment confirmed by EventOut.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      } else if (status == 'failed') {
+        ClientApiService.pendingListingFeeEventId = null;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Listing-fee payment was not completed. The event remains a draft.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      } else if (status == 'pending') {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Payment is still being confirmed. Return to EventOut shortly.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
+    } catch (e) {
+      debugPrint('Listing-fee status check failed: $e');
+    } finally {
+      _checkingListingFee = false;
+    }
   }
 
   Future<void> _load({bool force = false}) async {
@@ -74,34 +128,15 @@ class _ClientShellScreenState extends State<ClientShellScreen>
   Future<void> _createEvent() async {
     final created = await showCreateEventSheet(context);
     if (!mounted || !created) return;
-    final newEventId = takeLastCreatedEventId();
     await _load(force: true);
     if (!mounted) return;
     setState(() => _index = 1);
-    if (newEventId != null) {
-      // Open the new event's preview so the organizer can pay for it and
-      // publish it straight away.
-      final data = context.read<ClientDataProvider>();
-      for (final event in data.events) {
-        if (event.id != newEventId) continue;
-        await showClientEventDetails(
-          context,
-          event,
-          onChanged: () async {
-            final id = context.read<ClientAuthProvider>().client?.profileId;
-            if (id != null) await data.refresh(id);
-          },
-        );
-        break;
-      }
-    }
-    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
           content: Text(
-            'Event created. It will appear on the app and website.',
+            'Event saved as a draft. If checkout did not open, use its details to retry the listing-fee payment; do not create it again.',
           ),
           behavior: SnackBarBehavior.floating,
         ),

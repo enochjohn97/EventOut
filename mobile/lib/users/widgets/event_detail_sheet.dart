@@ -122,7 +122,9 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
     final isWide = width >= Breakpoints.tablet;
     // Passed events: no share, no favorite, and ticket sales are closed.
     final passed = EventUtils.isPassed(_event);
-    final canBuy = EventUtils.canBuyTickets(_event);
+    final isAdsOnly =
+        (_event.listingType ?? '').trim().toLowerCase() == 'ads_only';
+    final canBuy = !isAdsOnly && EventUtils.canBuyTickets(_event);
     final buyLabel = passed
         ? 'Event has passed'
         : (_event.isSoldOut ? 'Sold Out' : 'Get Ticket');
@@ -254,6 +256,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
                       style: const TextStyle(color: AppTheme.textMuted, height: 1.5),
                     ),
                     const SizedBox(height: 24),
+                    if (!isAdsOnly) ...[
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -271,6 +274,7 @@ class _EventDetailSheetState extends State<_EventDetailSheet> {
                           label: const Text('Get for someone else'),
                         ),
                       ),
+                    ],
                     ],
                     const SizedBox(height: 12),
                   ],

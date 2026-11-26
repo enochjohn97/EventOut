@@ -342,6 +342,11 @@ try {
     }
 
     // ── LEGACY FLOWS (Login/Password Reset) ───────────────────────────
+    if (!in_array($intent, ['client_login', 'password_reset'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Unsupported verification intent.']);
+        exit;
+    }
+
     $user = resolveEntity($identity, 'client');
     $auth_id = $user['id'] ?? null;
 
@@ -352,15 +357,25 @@ try {
 
     // Verify OTP for existing accounts (plain text OTP stored directly)
     $stmt = $pdo->prepare("
-        SELECT id FROM auth_tokens 
-        WHERE auth_id = ? AND token = ? AND type = 'otp' 
-        AND revoked = 0 AND expires_at > NOW()
+        SELECT id, token FROM auth_tokens
+        WHERE auth_id = ? AND type = 'otp'
+          AND revoked = 0 AND expires_at > NOW()
         ORDER BY created_at DESC LIMIT 1
     ");
-    $stmt->execute([$auth_id, $otp]);
-    $token_row = $stmt->fetch();
+    $stmt->execute([$auth_id]);
+    $token_row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $otpIsValid = false;
 
     if ($token_row) {
+        if ($intent === 'password_reset') {
+            $otpIsValid = password_verify((string) $otp, (string) $token_row['token']);
+        } else {
+            $otpIsValid = hash_equals((string) $token_row['token'], (string) $otp);
+        }
+    }
+
+    if ($otpIsValid) {
         // OTP is valid. Revoke it.
         $pdo->prepare("UPDATE auth_tokens SET revoked = 1 WHERE id = ?")->execute([$token_row['id']]);
 
