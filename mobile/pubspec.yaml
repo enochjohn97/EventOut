@@ -36,7 +36,10 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   # Deep link: eventout://event?id=N from the web "View Event" popup.
   app_links: ^6.4.0
+  file_picker: 13.4.0
 
+  material_ui: any
+  cupertino_ui: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

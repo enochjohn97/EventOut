@@ -204,6 +204,60 @@ class ClientApiService {
     }
   }
 
+  /// Publishes a draft event — the same endpoint the web "Publish Event Now"
+  /// button calls.
+  static Future<void> publishEvent(int eventId) async {
+    await ClientSession.refresh();
+    final response = await _send(
+      () => _dio.post(
+        '/events/publish-event',
+        data: {'event_id': eventId},
+        options: _options(),
+      ),
+    );
+    final data = _toMap(response.data);
+    if (data['success'] != true) {
+      throw ApiException(
+        data['message']?.toString() ?? 'Could not publish the event.',
+      );
+    }
+  }
+
+  /// Initializes the server-calculated EventOut listing fee through Paystack.
+  static Future<Map<String, dynamic>> initializeListingFeePayment(
+    int eventId,
+  ) async {
+    if (eventId <= 0) {
+      throw ApiException('Invalid event ID.');
+    }
+
+    await ClientSession.refresh();
+    final response = await _send(
+      () => _dio.post(
+        '/payments/initialize-listing-fee.php',
+        data: {'event_id': eventId},
+        options: _options(),
+      ),
+    );
+
+    final data = _toMap(response.data);
+    if (data['success'] != true) {
+      throw ApiException(
+        data['message']?.toString() ?? 'Could not initialize listing payment.',
+      );
+    }
+
+    final authorizationUrl = data['authorization_url']?.toString() ?? '';
+    final uri = Uri.tryParse(authorizationUrl);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host != 'checkout.paystack.com') {
+      throw ApiException('The payment provider returned an invalid checkout URL.');
+    }
+
+    return data;
+  }
+
   /// Publishes a new event/ads campaign using the same create-event API the
   /// web modal posts to (multipart with the banner image).
   static Future<int> createEvent(FormData form) async {

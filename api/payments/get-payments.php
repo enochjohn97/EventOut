@@ -23,12 +23,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Authenticate via robust middleware
-$auth_id = checkAuth(['user', 'admin', 'client']);
-$sessionRole = $_SESSION['user_role'] ?? $_SESSION['role'] ?? null;
+checkAuth(['user', 'admin', 'client']);
+$authAccountId = getAuthId();
+$roleStmt = $pdo->prepare(
+    "SELECT LOWER(role) FROM auth_accounts
+     WHERE id = ? AND is_active = 1 AND deleted_at IS NULL
+     LIMIT 1"
+);
+$roleStmt->execute([$authAccountId]);
+$sessionRole = $roleStmt->fetchColumn();
 
-if (!$sessionRole) {
+if (!in_array($sessionRole, ['user', 'admin', 'client'], true)) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Access denied. Role not found in session.']);
+    echo json_encode(['success' => false, 'message' => 'Your session could not be verified. Please sign in again.']);
     exit();
 }
 
@@ -103,6 +110,12 @@ $scopeParams = [];
 
 if ($sessionRole === 'user') {
     $userId = $_SESSION['user_id'] ?? null;
+    if (!$userId && !empty($_SESSION['auth_id'])) {
+        $userStmt = $pdo->prepare("SELECT id FROM users WHERE user_auth_id = ? LIMIT 1");
+        $userStmt->execute([$_SESSION['auth_id']]);
+        $userId = $userStmt->fetchColumn() ?: null;
+        if ($userId) $_SESSION['user_id'] = $userId;
+    }
     if (!$userId) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'User ID not found in session.']);

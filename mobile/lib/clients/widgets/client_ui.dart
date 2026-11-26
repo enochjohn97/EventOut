@@ -1,5 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
@@ -141,6 +141,7 @@ class ClientAvatar extends StatelessWidget {
     return ClipOval(
       child: CachedNetworkImage(
         imageUrl: url,
+        httpHeaders: ApiClient().imageHeadersFor(url),
         width: radius * 2,
         height: radius * 2,
         fit: BoxFit.cover,

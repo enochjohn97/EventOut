@@ -11,11 +11,13 @@ Flutter companion app for Eventra attendees.
 
 ### Manual steps required outside the code (Android)
 
-1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist and its **Authorized JavaScript origins** must include your API host (`https://eventout.com.ng`, plus `http://localhost:8080` for local dev).
+1. In **Google Cloud Console → APIs & Services → Credentials**, the **Web application client** `76953809917-o7bf7c7qbvpu7qglejqe77as5gb609fb.apps.googleusercontent.com` must exist. Its **Authorized JavaScript origins** must include your API host (`https://eventout.com.ng`, plus `http://localhost:8080` for local dev), and its **Authorized redirect URIs** must include the exact callback `https://eventout.com.ng/api/auth/google-handler.php` (or the value configured by `GOOGLE_REDIRECT_URI`). Origins do not substitute for redirect URIs. Google reports `Error 400: redirect_uri_mismatch` / “This app’s request is invalid” when this callback is not registered.
 2. Register the app's **SHA-1 and SHA-256 fingerprints** on the **Android** OAuth client:
    - debug keystore: `cd android && ./gradlew signingReport` (or `keytool -list -v -alias androiddebugkey -keystore %USERPROFILE%\.android\debug.keystore -storepass android`)
    - release keystore: run the same `keytool` command against your release keystore.
-   - Current debug/release signing SHA-1: `DF:57:2A:32:82:5E:6D:8D:0F:39:80:53:31:08:D6:F7:2A:2F:56:9C`; SHA-256: `B8:44:D3:A9:E5:81:53:7A:C6:69:15:9D:95:3C:8A:16:AA:99:AA:2B:4A:DF:F7:5A:3C:68:26:4D:7F:45:56:A1`.
+   - Debug signing SHA-1: `DF:57:2A:32:82:5E:6D:8D:0F:39:80:53:31:08:D6:F7:2A:2F:56:9C`; SHA-256: `B8:44:D3:A9:E5:81:53:7A:C6:69:15:9D:95:3C:8A:16:AA:99:AA:2B:4A:DF:F7:5A:3C:68:26:4D:7F:45:56:A1`.
+   - Release upload-key SHA-1: `B1:56:96:61:F3:3A:44:B7:83:CA:EA:60:A0:D8:B3:19:45:CB:E2:CB`; SHA-256: `DA:9E:E1:55:86:EC:8E:A5:2A:83:03:BB:32:DA:64:CD:34:9B:BC:D2:D4:F6:72:1E:07:B3:D9:F1:4F:67:2E:35`.
+   - If Play App Signing is enabled, also add the app-signing certificate fingerprints shown in Play Console; Play signs delivered app installs with that certificate.
    - The current device test fails after account selection with Google's `UNREGISTERED_ON_API_CONSOLE`; register this package and signing certificate on an Android OAuth client in the same Cloud project as the web client.
    - The fingerprint must be on the client whose **package name is `com.eventout_mobile`** (rename the app id and re-register if you change it).
 3. **OAuth consent screen** must be published (or the testers list must include the Google account used on device) and the `.../auth/...` scope must be non-sensitive / approved.
@@ -25,7 +27,36 @@ Flutter companion app for Eventra attendees.
 
 - `Info.plist` already contains `GIDClientID` and the reversed client ID URL scheme `com.googleusercontent.apps.76953809917-eguefgb6sgetu8a7g5grjh966il7slq6`. If you change the iOS client ID, update **both** keys together.
 - The iOS OAuth client in Google Cloud Console must have bundle id `com.eventout.mobile` registered (see `PRODUCT_BUNDLE_IDENTIFIER` in `project.pbxproj`). Apple bundle IDs cannot contain underscores, so this is the valid iOS equivalent of the Android package `com.eventout_mobile`. The existing iOS OAuth client belongs to the old bundle id; register a new iOS client for `com.eventout.mobile` and update `GIDClientID` and the reversed client ID URL scheme together.
-- No Firebase project is required for sign-in itself; `google-services.json` / `GoogleService-Info.plist` are not used by google_sign_in v7.
+- `google_sign_in` does not use Firebase configuration. However, this app's push notifications do: register the iOS app (`com.eventout.mobile`) in Firebase, add its `GoogleService-Info.plist` to the Runner target in Xcode, and configure an APNs authentication key in Firebase. The plist is not included in this project, so push stays disabled until you add it.
+
+## Build iOS on a Mac
+
+The iOS target requires iOS 15 or newer. Before transferring the project, keep
+`pubspec.lock`, but exclude generated build/cache files (`build/`,
+`.dart_tool/`, `ios/Flutter/ephemeral/`,
+`ios/Flutter/Generated.xcconfig`, and
+`ios/Flutter/flutter_export_environment.sh`) and the secret
+`android/key.properties`.
+
+On the Mac, install Xcode and Flutter, unzip the project, then run:
+
+```bash
+cd mobile
+flutter pub get
+cd ios
+pod install
+cd ..
+open ios/Runner.xcworkspace
+```
+
+In Xcode, select the Runner target, set your Apple Developer team under
+**Signing & Capabilities**, and confirm the bundle identifier is
+`com.eventout.mobile`. Push Notifications is enabled in the project; push
+delivery still requires an Apple provisioning profile with the APNs entitlement
+and an APNs key configured for the Firebase app. The iOS Google
+Sign-In OAuth client must also be registered for this bundle identifier. You
+can build from the terminal with `flutter build ios --release` after signing is
+configured.
 
 ## Setup
 
@@ -67,6 +98,26 @@ flutter run \
 ```
 
 Entry point: `lib/main.dart` (user app only).
+
+## Android release signing
+
+Release builds use an upload keystore rather than the Android debug key. Keep
+the keystore and `android/key.properties` private, and securely back up both:
+you need the same upload key for future updates unless you reset it in Play
+Console. The properties file is git-ignored.
+
+Create `mobile/android/key.properties` with the following values:
+
+```properties
+storeFile=/absolute/path/to/your-upload-key
+storePassword=your-store-password
+keyAlias=your-key-alias
+keyPassword=your-key-password
+```
+
+Build the Play upload bundle with `cd mobile && flutter build appbundle
+--release`. The AAB is written to
+`mobile/build/app/outputs/bundle/release/app-release.aab`.
 
 ## REST API (via `server/index.php`)
 

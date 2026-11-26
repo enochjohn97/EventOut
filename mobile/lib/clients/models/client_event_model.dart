@@ -23,6 +23,12 @@ class ClientEventModel {
   final double vipPrice;
   final double premiumPrice;
   final String? ticketTypeMode;
+  final String? visibility;
+  final String? paymentStatus;
+  final bool? paid;
+  final String? listingType;
+  final String? capacityTier;
+  final double listingFeeAmount;
 
   const ClientEventModel({
     required this.id,
@@ -49,10 +55,26 @@ class ClientEventModel {
     this.vipPrice = 0,
     this.premiumPrice = 0,
     this.ticketTypeMode,
+    this.visibility,
+    this.paymentStatus,
+    this.paid,
+    this.listingType,
+    this.capacityTier,
+    this.listingFeeAmount = 0,
   });
 
   bool get isLive => status.toLowerCase() == 'published';
   bool get isFree => price <= 0;
+  bool get isPublic => (visibility ?? 'public').toLowerCase() != 'private';
+
+  /// Listing fee must be paid before a fee-bearing draft can be published.
+  /// Legacy zero-fee events remain publishable.
+  bool get paymentOwed {
+    if (listingFeeAmount <= 0) return false;
+    if (paid != null) return !paid!;
+    final state = (paymentStatus ?? '').toLowerCase();
+    return state != 'paid';
+  }
 
   int? get capacity => maxCapacity ?? totalTickets;
 
@@ -66,23 +88,43 @@ class ClientEventModel {
       return double.tryParse(value.toString()) ?? 0;
     }
 
+    bool? toBool(dynamic value) {
+      if (value == null) return null;
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      final normalized = value.toString().toLowerCase();
+      if (normalized == '1' || normalized == 'true') return true;
+      if (normalized == '0' || normalized == 'false') return false;
+      return null;
+    }
+
     int? toInt(dynamic value) {
       if (value == null) return null;
       if (value is num) return value.toInt();
       return int.tryParse(value.toString());
     }
 
-    var imagePath = json['image_path']?.toString();
-    var absoluteImage = json['absolute_image_url']?.toString();
-    if (imagePath != null &&
-        imagePath.isNotEmpty &&
-        !imagePath.startsWith('http') &&
-        baseOrigin != null &&
-        baseOrigin.isNotEmpty) {
-      absoluteImage =
-          '$baseOrigin/${imagePath.replaceFirst(RegExp(r'^/'), '')}';
+    final imagePath = json['image_path']?.toString().trim();
+    String? resolveImageUrl(String? raw) {
+      final value = raw?.trim();
+      if (value == null || value.isEmpty) return null;
+      final uri = Uri.tryParse(value);
+      if (uri != null &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty) {
+        return uri.toString();
+      }
+      final origin = Uri.tryParse(baseOrigin ?? '');
+      if (origin == null || !origin.hasScheme || origin.host.isEmpty) {
+        return null;
+      }
+      return origin.resolve(value.replaceAll(r'\', '/')).toString();
     }
 
+    // Prefer the root-relative image path over a possibly stale API URL.
+    final absoluteImage =
+        resolveImageUrl(imagePath) ??
+        resolveImageUrl(json['absolute_image_url']?.toString());
     return ClientEventModel(
       id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       customId: json['custom_id']?.toString(),
@@ -110,6 +152,14 @@ class ClientEventModel {
       vipPrice: toDouble(json['vip_price']),
       premiumPrice: toDouble(json['premium_price']),
       ticketTypeMode: json['ticket_type_mode']?.toString(),
+      visibility: json['event_visibility']?.toString(),
+      paymentStatus: (json['listing_payment_status'] ??
+              json['payment_status'])
+          ?.toString(),
+      paid: toBool(json['listing_paid'] ?? json['is_paid']),
+      listingType: json['listing_type']?.toString(),
+      capacityTier: json['capacity_tier']?.toString(),
+      listingFeeAmount: toDouble(json['listing_fee_amount']),
     );
   }
 }

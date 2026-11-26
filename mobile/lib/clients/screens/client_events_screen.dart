@@ -1,5 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/network/api_client.dart';
@@ -113,6 +113,14 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
               icon: const Icon(Icons.search),
             ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'client-create-event',
+        onPressed: () => widget.onCreateEvent(),
+        backgroundColor: AppTheme.brandRed,
+        foregroundColor: Colors.white,
+        tooltip: 'Create event',
+        child: const Icon(Icons.add),
       ),
       body: Column(
         children: [
@@ -236,7 +244,16 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
           side: const BorderSide(color: Color(0xFFEDEFF3)),
         ),
         child: InkWell(
-          onTap: () => showClientEventDetails(context, event),
+          onTap: () => showClientEventDetails(
+            context,
+            event,
+            onChanged: () async {
+              final id = context.read<ClientAuthProvider>().client?.profileId;
+              if (id != null) {
+                await context.read<ClientDataProvider>().refresh(id);
+              }
+            },
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -246,6 +263,7 @@ class _ClientEventsScreenState extends State<ClientEventsScreen> {
                 child: image != null && image.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: image,
+                        httpHeaders: ApiClient().imageHeadersFor(image),
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => _imageFallback(),
                       )

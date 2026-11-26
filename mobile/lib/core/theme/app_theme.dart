@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Shared responsive breakpoints so phones, iPads/tablets and desktops all
 /// get an optimal layout from the same code.

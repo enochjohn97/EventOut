@@ -79,8 +79,6 @@
 	     internet while still allowing a LAN/emulator dev server on iOS. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

@@ -1,12 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../models/client_event_model.dart';
 import '../models/client_payment_model.dart';
 import '../models/client_ticket_model.dart';
+import '../services/client_api_service.dart';
 import 'client_ui.dart';
 
 /// Tapping a card in Events / Tickets / Payments opens one of these modals so
@@ -14,8 +16,9 @@ import 'client_ui.dart';
 
 Future<void> showClientEventDetails(
   BuildContext context,
-  ClientEventModel event,
-) {
+  ClientEventModel event, {
+  Future<void> Function()? onChanged,
+}) {
   final image =
       event.absoluteImageUrl ??
       (event.imagePath != null && event.imagePath!.trim().isNotEmpty
@@ -49,8 +52,159 @@ Future<void> showClientEventDetails(
         if ((event.customId ?? '').trim().isNotEmpty)
           ('Event ID', event.customId!),
       ],
+      footer: event.isLive
+          ? null
+          : _EventPreviewActions(event: event, onChanged: onChanged),
     ),
   );
+}
+
+/// The preview modal's two actions: pay for the event, then publish it.
+/// Publishing stays locked while the API reports the payment as outstanding.
+class _EventPreviewActions extends StatefulWidget {
+  final ClientEventModel event;
+  final Future<void> Function()? onChanged;
+
+  const _EventPreviewActions({required this.event, this.onChanged});
+
+  @override
+  State<_EventPreviewActions> createState() => _EventPreviewActionsState();
+}
+
+class _EventPreviewActionsState extends State<_EventPreviewActions> {
+  bool _busy = false;
+
+  Future<void> _makePayment() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    try {
+      final payment =
+          await ClientApiService.initializeListingFeePayment(widget.event.id);
+      final checkoutUrl = payment['authorization_url'].toString();
+      final uri = Uri.parse(checkoutUrl);
+
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.inAppBrowserView,
+      );
+
+      if (!mounted) return;
+      if (!opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the Paystack checkout page.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      await widget.onChanged?.call();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Checkout closed. Payment status refreshed; confirm payment before publishing.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _publish() async {
+    setState(() => _busy = true);
+    try {
+      await ClientApiService.publishEvent(widget.event.id);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      await widget.onChanged?.call();
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Event published. It is now live.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paymentOwed = widget.event.paymentOwed;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _makePayment,
+                icon: const Icon(Icons.credit_card, size: 16),
+                label: const Text('Make payment'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _busy || paymentOwed ? null : _publish,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.brandRed,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppTheme.brandRed.withValues(
+                    alpha: 0.35,
+                  ),
+                  disabledForegroundColor: Colors.white70,
+                ),
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.rocket_launch_outlined, size: 16),
+                label: const Text('Publish event'),
+              ),
+            ),
+          ],
+        ),
+        if (paymentOwed) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Publish unlocks once the event payment has been confirmed.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 Future<void> showClientTicketDetails(
@@ -204,6 +358,7 @@ class _SheetBody extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 child: CachedNetworkImage(
                   imageUrl: imageUrl!,
+                  httpHeaders: ApiClient().imageHeadersFor(imageUrl!),
                   height: 150,
                   width: double.infinity,
                   fit: BoxFit.cover,

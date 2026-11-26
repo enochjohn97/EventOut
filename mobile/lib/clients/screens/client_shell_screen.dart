@@ -1,11 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../providers/client_auth_provider.dart';
 import '../providers/client_data_provider.dart';
+import '../widgets/client_detail_sheets.dart';
 import '../widgets/create_event_sheet.dart';
 import 'client_events_screen.dart';
 import 'client_home_screen.dart';
@@ -13,8 +14,8 @@ import 'client_payments_screen.dart';
 import 'client_profile_screen.dart';
 import 'client_tickets_screen.dart';
 
-/// Organizer home shell: Home · Events · Tickets · Payments · Profile, with a
-/// plus button that opens the create-event (ads) modal.
+/// Organizer home shell: Home · Events · Tickets · Payments · Profile. The
+/// create-event button lives on the Events tab only.
 class ClientShellScreen extends StatefulWidget {
   const ClientShellScreen({super.key});
 
@@ -73,9 +74,28 @@ class _ClientShellScreenState extends State<ClientShellScreen>
   Future<void> _createEvent() async {
     final created = await showCreateEventSheet(context);
     if (!mounted || !created) return;
+    final newEventId = takeLastCreatedEventId();
     await _load(force: true);
     if (!mounted) return;
     setState(() => _index = 1);
+    if (newEventId != null) {
+      // Open the new event's preview so the organizer can pay for it and
+      // publish it straight away.
+      final data = context.read<ClientDataProvider>();
+      for (final event in data.events) {
+        if (event.id != newEventId) continue;
+        await showClientEventDetails(
+          context,
+          event,
+          onChanged: () async {
+            final id = context.read<ClientAuthProvider>().client?.profileId;
+            if (id != null) await data.refresh(id);
+          },
+        );
+        break;
+      }
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -108,14 +128,6 @@ class _ClientShellScreenState extends State<ClientShellScreen>
     return Scaffold(
       backgroundColor: AppTheme.bgPage,
       body: IndexedStack(index: _index, children: pages),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'client-create-event',
-        onPressed: _createEvent,
-        backgroundColor: AppTheme.brandRed,
-        foregroundColor: Colors.white,
-        tooltip: 'Create event',
-        child: const Icon(Icons.add),
-      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: _selectTab,

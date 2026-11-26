@@ -108,61 +108,72 @@ if (!$token) {
     }
 }
 
-// Fallback to Role detection from header if session role is not set
-if (!$sessionRole) {
-    if ($portal && $portal !== 'user') {
-        $sessionRole = $portal;
-    }
-}
+// Portal is only an expected-role restriction, never proof of identity.
+$expectedRole = in_array($portal, ['admin', 'client', 'user'], true)
+    ? $portal
+    : null;
 
-// Token-only fallback: rebuild $authId and $user_id from the token when session is missing
-if ($token && (!$authId || !$user_id)) {
+// Always derive identity and role from the actual access token.
+if ($token) {
     $stmt = $pdo->prepare("
-        SELECT t.auth_id, a.role
+        SELECT t.auth_id, a.role, a.is_active, a.deleted_at
         FROM auth_tokens t
-        JOIN auth_accounts a ON a.id = t.auth_id
-        WHERE t.token = ? AND t.expires_at > NOW()
+        INNER JOIN auth_accounts a ON a.id = t.auth_id
+        WHERE t.token = ?
+          AND t.type = 'access'
+          AND t.expires_at > NOW()
+          AND COALESCE(t.revoked, 0) = 0
+        LIMIT 1
     ");
     $stmt->execute([$token]);
     $tokenRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($tokenRow) {
+    if (
+        !$tokenRow ||
+        !$tokenRow['is_active'] ||
+        $tokenRow['deleted_at']
+    ) {
+        $authId = null;
+        $user_id = null;
+        $sessionRole = null;
+    } else {
         $authId = (int) $tokenRow['auth_id'];
+        $sessionRole = strtolower($tokenRow['role']);
 
-        // Let the token's actual role override if session had none
-        if (!$sessionRole || $sessionRole === 'user') {
-            $sessionRole = strtolower($tokenRow['role']);
+        if ($expectedRole && $sessionRole !== $expectedRole) {
+            $authId = null;
+            $user_id = null;
+            $sessionRole = null;
+        } elseif ($sessionRole === 'admin') {
+            $s2 = $pdo->prepare(
+                "SELECT id FROM admins WHERE admin_auth_id = ? LIMIT 1"
+            );
+        } elseif ($sessionRole === 'client') {
+            $s2 = $pdo->prepare(
+                "SELECT id FROM clients WHERE client_auth_id = ? LIMIT 1"
+            );
+        } elseif ($sessionRole === 'user') {
+            $s2 = $pdo->prepare(
+                "SELECT id FROM users WHERE user_auth_id = ? LIMIT 1"
+            );
+        } else {
+            $authId = null;
+            $user_id = null;
+            $sessionRole = null;
         }
 
-        // Derive the role-specific profile ID from the correct table
-        if ($sessionRole === 'admin') {
-            $s2 = $pdo->prepare("SELECT id FROM admins WHERE admin_auth_id = ?");
+        if ($authId && $sessionRole) {
             $s2->execute([$authId]);
             $user_id = $s2->fetchColumn();
+
             if (!$user_id) {
-                $pdo->prepare("INSERT INTO admins (admin_auth_id, name) VALUES (?, ?)")->execute([$authId, 'Admin']);
-                $user_id = $pdo->lastInsertId();
-            }
-        } elseif ($sessionRole === 'client') {
-            $s2 = $pdo->prepare("SELECT id FROM clients WHERE client_auth_id = ?");
-            $s2->execute([$authId]);
-            $user_id = $s2->fetchColumn();
-            if (!$user_id) {
-                $pdo->prepare("INSERT INTO clients (client_auth_id, name) VALUES (?, ?)")->execute([$authId, 'Client']);
-                $user_id = $pdo->lastInsertId();
-            }
-        } else {
-            $s2 = $pdo->prepare("SELECT id FROM users WHERE user_auth_id = ?");
-            $s2->execute([$authId]);
-            $user_id = $s2->fetchColumn();
-            if (!$user_id) {
-                $pdo->prepare("INSERT INTO users (user_auth_id, name) VALUES (?, ?)")->execute([$authId, 'User']);
-                $user_id = $pdo->lastInsertId();
+                $authId = null;
+                $user_id = null;
+                $sessionRole = null;
             }
         }
     }
 }
-
 if (!$sessionRole || !$user_id || !$authId || !$token) {
     echo json_encode(['success' => false, 'message' => 'Not authenticated']);
     exit;
@@ -173,13 +184,23 @@ try {
     $stmt = $pdo->prepare("
         SELECT a.id, a.email, a.role, a.is_active
         FROM auth_accounts a
-        JOIN auth_tokens t ON a.id = t.auth_id
-        WHERE t.token = ? AND a.id = ? AND t.expires_at > NOW() AND t.revoked = 0
+        INNER JOIN auth_tokens t ON a.id = t.auth_id
+        WHERE t.token = ?
+          AND a.id = ?
+          AND t.type = 'access'
+          AND t.expires_at > NOW()
+          AND COALESCE(t.revoked, 0) = 0
+          AND a.is_active = 1
+          AND a.deleted_at IS NULL
     ");
     $stmt->execute([$token, $authId]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$account || strtolower($account['role']) !== strtolower($sessionRole)) {
+    if (
+        !$account ||
+        strtolower($account['role']) !== strtolower($sessionRole) ||
+        ($expectedRole && strtolower($account['role']) !== $expectedRole)
+    ) {
         echo json_encode(['success' => false, 'message' => 'Invalid session']);
         exit;
     }
@@ -188,6 +209,15 @@ try {
     $pdo->prepare("UPDATE auth_accounts SET last_seen = NOW() WHERE id = ?")->execute([$account['id']]);
 
     $user = resolveEntity($account['id'], $account['role']) ?? resolveEntity($account['email'], $account['role']);
+
+    if (!$user || empty($user['profile_id'])) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Your account profile could not be verified. Please contact support.'
+        ]);
+        exit;
+    }
 
     // Persist verified session state
     if (session_status() === PHP_SESSION_ACTIVE) {

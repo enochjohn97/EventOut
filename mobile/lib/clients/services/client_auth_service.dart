@@ -146,6 +146,92 @@ class ClientAuthService {
     }
   }
 
+  /// Password recovery, step 1 — ask the server to email a reset code.
+  /// Mirrors the web portal's "Forgot Password?" flow
+  /// (`/api/auth/forgot-password.php`).
+  static Future<String> requestPasswordReset(String email) async {
+    try {
+      final response = await _dio.post(
+        '/auth/forgot-password',
+        data: {'identity': email.trim(), 'email': email.trim()},
+        options: Options(extra: ClientSession.requestExtra()),
+      );
+      final data = _toMap(response.data);
+      if (data['success'] != true) {
+        throw ApiException(
+          data['message']?.toString() ?? 'Could not send the reset code.',
+        );
+      }
+      return data['message']?.toString() ??
+          'If an account exists with this email, you will receive a code shortly.';
+    } on DioException catch (error) {
+      throw apiErrorFromDio(error, 'Could not send the reset code.');
+    }
+  }
+
+  /// Password recovery, step 2 — verify the emailed code and return the reset
+  /// token the server issues for the final step.
+  static Future<String> verifyResetCode({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/verify-otp',
+        data: {
+          'identity': email.trim(),
+          'otp': code.trim(),
+          'intent': 'password_reset',
+        },
+        options: Options(extra: ClientSession.requestExtra()),
+      );
+      final data = _toMap(response.data);
+      if (data['success'] != true) {
+        throw ApiException(
+          data['message']?.toString() ?? 'Invalid verification code.',
+        );
+      }
+      final token = data['reset_token']?.toString();
+      if (token == null || token.isEmpty) {
+        throw const ApiException(
+          'Your reset session expired. Request a new code.',
+        );
+      }
+      return token;
+    } on DioException catch (error) {
+      throw apiErrorFromDio(error, 'Could not verify the code.');
+    }
+  }
+
+  /// Password recovery, step 3 — save the new password.
+  static Future<String> resetPassword({
+    required String resetToken,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/reset-password',
+        data: {
+          'reset_token': resetToken,
+          'new_password': password,
+          'password': password,
+          'password_confirm': password,
+        },
+        options: Options(extra: ClientSession.requestExtra()),
+      );
+      final data = _toMap(response.data);
+      if (data['success'] != true) {
+        throw ApiException(
+          data['message']?.toString() ?? 'Could not reset your password.',
+        );
+      }
+      return data['message']?.toString() ??
+          'Your password has been reset. You can now sign in.';
+    } on DioException catch (error) {
+      throw apiErrorFromDio(error, 'Could not reset your password.');
+    }
+  }
+
   /// Re-reads the signed-in profile so web edits appear on the phone.
   static Future<ClientModel> fetchProfile() async {
     try {
@@ -177,11 +263,12 @@ class ClientAuthService {
   static Future<ClientModel> updateProfile(
     Map<String, String> fields, {
     String? profilePicPath,
+    Map<String, String> kycFilePaths = const {},
+    void Function(int, int)? onSendProgress,
   }) async {
     try {
       final form = FormData();
       for (final entry in fields.entries) {
-        if (entry.value.trim().isEmpty) continue;
         form.fields.add(MapEntry(entry.key, entry.value.trim()));
       }
       if (profilePicPath != null && profilePicPath.isNotEmpty) {
@@ -189,6 +276,29 @@ class ClientAuthService {
           MapEntry('profile_pic', await MultipartFile.fromFile(profilePicPath)),
         );
       }
+
+      const allowedKycFields = {
+        'kyc_nin_file',
+        'kyc_voter_card_file',
+        'kyc_driver_license_file',
+        'kyc_cac_file',
+      };
+
+      for (final entry in kycFilePaths.entries) {
+        if (!allowedKycFields.contains(entry.key)) continue;
+        if (entry.value.trim().isEmpty) continue;
+
+        form.files.add(
+          MapEntry(
+            entry.key,
+            await MultipartFile.fromFile(
+              entry.value,
+              filename: entry.value.replaceAll('\\', '/').split('/').last,
+            ),
+          ),
+        );
+      }
+
       // POST, not PUT: PHP only parses multipart bodies into $_POST for POST
       // requests, so a PUT would silently update nothing.
       final response = await _dio.post(
@@ -198,6 +308,7 @@ class ClientAuthService {
           headers: ClientSession.headers(json: false),
           extra: ClientSession.requestExtra(),
         ),
+        onSendProgress: onSendProgress,
       );
       final data = _toMap(response.data);
       if (data['success'] != true) {
